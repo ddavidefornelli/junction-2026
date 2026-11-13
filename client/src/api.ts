@@ -59,6 +59,24 @@ export function getTransactions(customerId: string, offset: number): Promise<Tra
   })
 }
 
+// Fetch every transaction for the selected customer; the account feed is only paginated 50 at a time.
+// Use 1000-row pages (Supabase's default maximum) so wellness never reports partial totals.
+export async function getWellnessTransactions(customerId: string): Promise<Transaction[]> {
+  const result: Transaction[] = []
+  const batchSize = 1000
+  while (true) {
+    const rows = await get<Transaction[]>('transactions', {
+      customer_id: `eq.${customerId}`,
+      select: 'bank_account_id,tx_date,tx_timestamp,category,tx_amount_eur,balance_after_eur,transaction_type,merchant_id',
+      order: 'tx_timestamp.asc',
+      offset: String(result.length),
+      limit: String(batchSize),
+    })
+    result.push(...rows)
+    if (rows.length < batchSize) return result
+  }
+}
+
 export async function getMortgage(customerId: string): Promise<Mortgage | null> {
   const rows = await get<Mortgage[]>('mortgage_applications', {
     customer_id: `eq.${customerId}`,

@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
   PAGE_SIZE,
-  classify,
   getCustomer,
   getMortgage,
   getTransactions,
+  getWellnessTransactions,
   type Mortgage,
   type Transaction,
-  type Verdict,
-  verdictKey,
 } from './api'
 import { date, eur, label, percent, signedEur } from './format'
+import { calculateWellness, impactScore, type Wellness } from './wellness'
 
 const SESSION_KEY = 'customerId'
 
@@ -88,47 +87,18 @@ function Login({ onLogin }: { onLogin: (id: string) => void }) {
   )
 }
 
-type View = 'overview' | 'transactions' | 'loan'
-type Verdicts = Record<string, Verdict>
-
+type View = 'overview' | 'transactions' | 'wellness' | 'loan'
 function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => void }) {
   const [view, setView] = useState<View>('overview')
   const [txs, setTxs] = useState<Transaction[] | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [mortgage, setMortgage] = useState<Mortgage | null>(null)
+  const [wellness, setWellness] = useState<Wellness | null>(null)
+  const [wellnessLoading, setWellnessLoading] = useState(false)
+  const [wellnessError, setWellnessError] = useState(false)
+  const [wellnessAttempt, setWellnessAttempt] = useState(0)
   const [error, setError] = useState('')
-  const goalKey = `goal:${customerId}`
-  const [goal, setGoal] = useState(() => localStorage.getItem(goalKey) ?? '')
-  // Verdicts for the current goal, by purchase kind (see verdictKey).
-  const [verdicts, setVerdicts] = useState<Verdicts>({})
-  const [classifyFailed, setClassifyFailed] = useState(false)
-
-  function saveGoal(value: string) {
-    if (value === goal) return
-    localStorage.setItem(goalKey, value)
-    setGoal(value)
-    setVerdicts({})
-    setClassifyFailed(false)
-  }
-
-  // Classify the purchase kinds that don't have a verdict for this goal yet.
-  useEffect(() => {
-    if (!goal || !txs || classifyFailed) return
-    const todo = txs.filter((tx) => {
-      const key = verdictKey(tx)
-      return key && !(key in verdicts)
-    })
-    if (todo.length === 0) return
-    let stale = false
-    classify(goal, todo)
-      .then((found) => !stale && setVerdicts((v) => ({ ...v, ...found })))
-      .catch(() => !stale && setClassifyFailed(true))
-    return () => {
-      stale = true
-    }
-  }, [goal, txs, verdicts, classifyFailed])
-
   useEffect(() => {
     let stale = false
     getTransactions(customerId, 0)
@@ -145,6 +115,20 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
       stale = true
     }
   }, [customerId])
+
+  useEffect(() => {
+    if ((view !== 'wellness' && view !== 'overview') || wellness || wellnessError) return
+    let stale = false
+    getWellnessTransactions(customerId)
+      .then((rows) => {
+        if (!stale) setWellness(calculateWellness(rows))
+      })
+      .catch(() => !stale && setWellnessError(true))
+      .finally(() => !stale && setWellnessLoading(false))
+    // The request starts only on entry or retry, not whenever loading changes.
+    setWellnessLoading(true)
+    return () => { stale = true }
+  }, [view, customerId, wellnessAttempt, wellnessError, wellness])
 
   const loadMore = useCallback(async () => {
     if (!txs) return
@@ -178,14 +162,15 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
         </div>
       </header>
 
-      <nav className="mb-6 flex gap-6 border-b border-line text-sm">
+      <nav className="mb-6 flex gap-6 overflow-x-auto border-b border-line text-sm">
         {tabs.map(([id, name]) => (
           <button
             key={id}
             onClick={() => setView(id)}
-            aria-current={view === id ? 'page' : undefined}
-            className={`-mb-px border-b-2 pb-3 ${
-              view === id ? 'border-ink font-medium' : 'border-transparent text-muted'
+            aria-current={view === id || (view === 'wellness' && id === 'overview') ? 'page' : undefined}
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 pb-3 ${
+              view === id || (view === 'wellness' && id === 'overview')
+                ? 'border-ink font-medium' : 'border-transparent text-muted'
             }`}
           >
             {name}
@@ -200,20 +185,33 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
       ) : view === 'overview' ? (
         <Overview
           txs={txs}
-          verdicts={verdicts}
-          goal={goal}
-          onGoal={saveGoal}
-          classifyFailed={classifyFailed}
+          wellness={wellness}
+          wellnessLoading={wellnessLoading}
+          wellnessError={wellnessError}
+          onShowWellness={() => setView('wellness')}
           onShowAll={() => setView('transactions')}
         />
       ) : view === 'transactions' ? (
         <Transactions
           txs={txs}
-          verdicts={verdicts}
           hasMore={hasMore}
           loading={loadingMore}
           onMore={loadMore}
         />
+      ) : view === 'wellness' ? (
+        wellnessError ? (
+          <div className="text-sm text-red-700">
+            <p>Could not load financial data.</p>
+            <button className="mt-2 underline" onClick={() => {
+              setWellnessError(false)
+              setWellnessAttempt((n) => n + 1)
+            }}>Retry</button>
+          </div>
+        ) : wellnessLoading || !wellness ? (
+          <p className="text-sm text-muted">{wellnessLoading ? 'Calculating across all transactions…' : 'No transactions available.'}</p>
+        ) : (
+          <FinancialWellness data={wellness} />
+        )
       ) : (
         mortgage && <Loan mortgage={mortgage} />
       )}
@@ -225,87 +223,37 @@ function Card({ children }: { children: ReactNode }) {
   return <section className="rounded-lg border border-line bg-white">{children}</section>
 }
 
-function Goal({
-  goal,
-  onGoal,
-  failed,
-}: {
-  goal: string
-  onGoal: (goal: string) => void
-  failed: boolean
-}) {
-  const [draft, setDraft] = useState(goal)
-  return (
-    <Card>
-      <form
-        className="p-5"
-        onSubmit={(e) => {
-          e.preventDefault()
-          onGoal(draft.trim())
-        }}
-      >
-        <label htmlFor="goal" className="mb-1.5 block text-sm text-muted">
-          Your goal
-        </label>
-        <div className="flex gap-2">
-          <input
-            id="goal"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            maxLength={300}
-            placeholder="e.g. Save 20 000 € for a flat"
-            className="min-w-0 flex-1 rounded-md border border-line bg-white px-3 py-2 outline-none focus:border-ink"
-          />
-          <button
-            disabled={draft.trim() === goal}
-            className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            Save
-          </button>
-        </div>
-        <p className={`mt-2 text-sm ${failed ? 'text-red-700' : 'text-muted'}`}>
-          {failed
-            ? 'Could not rate your purchases right now.'
-            : goal
-              ? 'Purchases are marked as good or bad for this goal, or neutral.'
-              : 'Set a goal to see which purchases help it and which work against it.'}
-        </p>
-      </form>
-    </Card>
-  )
-}
+const SCORE_DESCRIPTIONS = [
+  'Your cash flow and buffer may need attention.',
+  'A few adjustments could help strengthen your finances.',
+  'Your finances show some stability, with room to grow.',
+  'You are building a solid financial foundation.',
+  'Your finances look strong across these indicators.',
+] as const
 
-const VERDICT_STYLE: Record<Verdict, string> = {
-  good: 'bg-credit/10 text-credit',
-  bad: 'bg-red-700/10 text-red-700',
-  neutral: 'bg-paper text-muted',
-}
-
-function VerdictBadge({ verdict }: { verdict: Verdict }) {
-  return (
-    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${VERDICT_STYLE[verdict]}`}>
-      {label(verdict)}
-    </span>
-  )
+function scoreDescription(score: number): string {
+  if (score === 100) return 'Excellent balance: every score indicator is at its maximum.'
+  return SCORE_DESCRIPTIONS[Math.min(4, Math.max(0, Math.floor(score / 20)))]
 }
 
 function Overview({
   txs,
-  verdicts,
-  goal,
-  onGoal,
-  classifyFailed,
+  wellness,
+  wellnessLoading,
+  wellnessError,
+  onShowWellness,
   onShowAll,
 }: {
   txs: Transaction[]
-  verdicts: Verdicts
-  goal: string
-  onGoal: (goal: string) => void
-  classifyFailed: boolean
+  wellness: Wellness | null
+  wellnessLoading: boolean
+  wellnessError: boolean
+  onShowWellness: () => void
   onShowAll: () => void
 }) {
   const latest = txs[0]
   if (!latest) return <p className="text-sm text-muted">No account activity.</p>
+  const score = wellness ? impactScore(wellness) : null
 
   return (
     <div className="space-y-6">
@@ -318,7 +266,42 @@ function Overview({
         </div>
       </Card>
 
-      <Goal goal={goal} onGoal={onGoal} failed={classifyFailed} />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card>
+          <div className="flex h-full min-h-40 flex-col justify-between p-5">
+            <div>
+              <h2 className="font-medium">Financial score</h2>
+              <p className="mt-3 text-3xl font-semibold">
+                {score === null ? '—' : `${score} / 100`}
+              </p>
+              <p className="mt-2 text-sm text-muted">
+                {score !== null ? scoreDescription(score) : wellnessError ? 'Score unavailable' : wellnessLoading ? 'Calculating…' : 'No score available.'}
+              </p>
+            </div>
+            <button onClick={onShowWellness} className="mt-4 self-start text-sm underline underline-offset-4">
+              View details
+            </button>
+          </div>
+        </Card>
+        <Card>
+          <div className="flex h-full min-h-40 flex-col p-5">
+            <div className="flex items-center gap-3 border-b border-line pb-3">
+              <span aria-hidden="true" className="flex h-9 w-9 items-center justify-center rounded-full bg-ink text-sm font-semibold text-white">P</span>
+              <div>
+                <h2 className="text-sm font-medium">Pankki assistant</h2>
+                <p className="text-xs text-muted">Coming soon</p>
+              </div>
+            </div>
+            <div className="my-4 rounded-lg bg-paper p-3 text-sm">
+              Hi! Soon you'll be able to ask me about your finances here.
+            </div>
+            <div className="mt-auto flex gap-2">
+              <input disabled aria-label="Chat message" placeholder="Ask a question…" className="min-w-0 flex-1 rounded-md border border-line bg-paper px-3 py-2 text-sm placeholder:text-muted" />
+              <button disabled aria-label="Send message" className="rounded-md bg-ink px-3 text-sm text-white opacity-50">Send</button>
+            </div>
+          </div>
+        </Card>
+      </div>
 
       <Card>
         <div className="flex items-baseline justify-between px-5 pt-4 pb-1">
@@ -329,7 +312,7 @@ function Overview({
         </div>
         <ul className="divide-y divide-line px-5">
           {txs.slice(0, 5).map((tx, i) => (
-            <TxRow key={i} tx={tx} verdicts={verdicts} showDate />
+            <TxRow key={i} tx={tx} showDate />
           ))}
         </ul>
       </Card>
@@ -337,16 +320,107 @@ function Overview({
   )
 }
 
+function FinancialWellness({ data: w }: { data: Wellness }) {
+  const [openInfo, setOpenInfo] = useState<string | null>(null)
+  const figures: [string, string, string][] = [
+    ['Money in', eur(w.incoming), 'Total deposits during the period.'],
+    ['Money out', eur(w.outgoing), 'Total withdrawals and payments, shown as a positive amount.'],
+    ['Net cash flow', signedEur(w.net), 'Money in minus money out during the period.'],
+    ['Average balance', eur(w.averageBalance), 'Average end-of-day balance, including days without transactions.'],
+    ['Savings rate', percent(w.savingsRate), 'Net cash flow divided by money in; it may be negative.'],
+    ['Housing and utilities', eur(w.essentials), 'Payments in the Housing and Utilities categories.'],
+    ['Days overdrawn', `${w.negativeDays} / ${w.days}`, 'Days when the combined end-of-day balance was negative.'],
+  ]
+  const infoButton = (id: string, name: string) => (
+    <button
+      type="button"
+      aria-label={`About ${name}`}
+      aria-expanded={openInfo === id}
+      onClick={() => setOpenInfo(openInfo === id ? null : id)}
+      className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-line text-xs font-semibold text-muted hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+    >
+      i
+    </button>
+  )
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold">Financial well-being</h1>
+          {infoButton('method', 'these calculations')}
+        </div>
+        {openInfo === 'method' && (
+          <p id="wellness-info-method" className="mt-2 text-sm text-muted">
+            Based on all available transactions. Each account balance is tracked from its first
+            recorded transaction and carried forward on days without activity. This is not a credit
+            assessment or a forecast.
+          </p>
+        )}
+        <p className="mt-1 text-sm text-muted">
+          {date(w.from)} – {date(w.to)} · {w.accounts} {w.accounts === 1 ? 'account' : 'accounts'} · {w.days} days
+        </p>
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="min-h-40 rounded-lg border border-line bg-white p-5">
+            <p className="flex items-center gap-2 text-sm text-muted">
+              Financial score {infoButton('impact', 'the financial score')}
+            </p>
+            <p className="mt-4 text-5xl font-semibold tracking-tight">
+              {impactScore(w)} <span className="text-lg font-normal text-muted">/ 100</span>
+            </p>
+            {openInfo === 'impact' && (
+              <p className="mt-3 text-sm text-muted">
+                Indicative score: up to 40 points for saving 20% of income, 35 for an average
+                balance covering three months of spending, and 25 for no overdrawn days.
+                Not a credit score or a prediction.
+              </p>
+            )}
+          </div>
+          <div className="min-h-40 rounded-lg border border-line bg-white p-5">
+            <h2 className="text-sm text-muted">Improvment</h2>
+          </div>
+        </div>
+      </div>
+      <Card>
+        <dl className="grid gap-x-6 px-5 sm:grid-cols-2">
+          {figures.map(([name, value, description], index) => {
+            const id = `metric-${index}`
+            return (
+              <div key={name} className="border-b border-line py-4">
+                <dt className="flex items-center gap-2 text-sm text-muted">
+                  {name} {infoButton(id, name)}
+                </dt>
+                <dd className="mt-1 text-xl font-semibold">{value}</dd>
+                {openInfo === id && (
+                  <p id={`wellness-info-${id}`} className="mt-2 text-sm text-muted">{description}</p>
+                )}
+              </div>
+            )
+          })}
+        </dl>
+      </Card>
+      {w.categories.length > 0 && (
+        <Card>
+          <h2 className="px-5 pt-4 font-medium">Top spending categories</h2>
+          <dl className="px-5 pb-2">
+            {w.categories.map(([name, amount]) => (
+              <div key={name} className="flex justify-between gap-4 border-b border-line py-3 last:border-0">
+                <dt>{name}</dt><dd className="font-medium">{eur(amount)}</dd>
+              </div>
+            ))}
+          </dl>
+        </Card>
+      )}
+    </div>
+  )
+}
+
 function TxRow({
   tx,
-  verdicts,
   showDate,
 }: {
   tx: Transaction
-  verdicts: Verdicts
   showDate?: boolean
 }) {
-  const verdict = verdicts[verdictKey(tx) ?? '']
   const type = label(tx.transaction_type)
   const title = tx.category ?? type
   const detail = [showDate && date(tx.tx_date), type !== title && type].filter(Boolean).join(' · ')
@@ -355,7 +429,6 @@ function TxRow({
       <div className="min-w-0">
         <p className="flex items-center gap-2">
           <span className="truncate">{title}</span>
-          {verdict && <VerdictBadge verdict={verdict} />}
         </p>
         {detail && <p className="truncate text-sm text-muted">{detail}</p>}
       </div>
@@ -368,13 +441,11 @@ function TxRow({
 
 function Transactions({
   txs,
-  verdicts,
   hasMore,
   loading,
   onMore,
 }: {
   txs: Transaction[]
-  verdicts: Verdicts
   hasMore: boolean
   loading: boolean
   onMore: () => void
@@ -398,7 +469,7 @@ function Transactions({
             </h3>
             <ul className="divide-y divide-line border-b border-line px-5 last:border-b-0">
               {rows.map((tx, i) => (
-                <TxRow key={i} tx={tx} verdicts={verdicts} />
+                <TxRow key={i} tx={tx} />
               ))}
             </ul>
           </div>
