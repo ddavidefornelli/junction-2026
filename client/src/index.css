@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0a2540;
+  --color-line: #e3e6ea;
+  --color-muted: #66727f;
+  --color-paper: #f6f7f8;
+  --color-credit: #0b7a4b;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
