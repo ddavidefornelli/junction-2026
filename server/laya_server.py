@@ -54,6 +54,10 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, result)
 
 
+class Server(ThreadingHTTPServer):
+    request_queue_size = 128  # the client sends one request per purchase kind, all at once
+
+
 if __name__ == "__main__":
     print(f"Laya on http://{HOST}:{PORT} ({agent.device})", flush=True)
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+    Server((HOST, PORT), Handler).serve_forever()
