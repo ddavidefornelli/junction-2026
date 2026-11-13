@@ -4,12 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check-db": "node --env-file=.env src/check-connection.js"
+    "check-db": "node --env-file=.env src/check-connection.js",
+    "load-data": "node src/load-data.js"
   },
   "engines": {
     "node": ">=20.6"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.119.0"
+    "@supabase/supabase-js": "^2.119.0",
+    "csv-parse": "^7.0.3"
+  },
+  "devDependencies": {
+    "supabase": "^3.1.0"
   }
 }
