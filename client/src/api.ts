@@ -13,6 +13,7 @@ export type Transaction = {
   balance_after_eur: number
   transaction_type: string | null
   merchant_id: string | null
+  mcc_code: string | null
 }
 
 export type MortgageEvent = {
@@ -52,7 +53,7 @@ export function getTransactions(customerId: string, offset: number): Promise<Tra
   return get('transactions', {
     customer_id: `eq.${customerId}`,
     select:
-      'bank_account_id,tx_date,tx_timestamp,category,tx_amount_eur,balance_after_eur,transaction_type,merchant_id',
+      'bank_account_id,tx_date,tx_timestamp,category,tx_amount_eur,balance_after_eur,transaction_type,merchant_id,mcc_code',
     order: 'tx_timestamp.desc',
     offset: String(offset),
     limit: String(PAGE_SIZE),
@@ -67,7 +68,7 @@ export async function getWellnessTransactions(customerId: string): Promise<Trans
   while (true) {
     const rows = await get<Transaction[]>('transactions', {
       customer_id: `eq.${customerId}`,
-      select: 'bank_account_id,tx_date,tx_timestamp,category,tx_amount_eur,balance_after_eur,transaction_type,merchant_id',
+      select: 'bank_account_id,tx_date,tx_timestamp,category,tx_amount_eur,balance_after_eur,transaction_type,merchant_id,mcc_code',
       order: 'tx_timestamp.asc',
       offset: String(result.length),
       limit: String(batchSize),

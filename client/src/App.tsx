@@ -1,15 +1,22 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
   PAGE_SIZE,
   getCustomer,
   getMortgage,
   getTransactions,
   getWellnessTransactions,
+  classify,
+  verdictKey,
   type Mortgage,
   type Transaction,
+  type Verdict,
 } from './api'
 import { date, eur, label, percent, signedEur } from './format'
 import { calculateWellness, impactScore, type Wellness } from './wellness'
+import { GoalForm } from './GoalForm'
+import { deadline, goalLabel, goalStatement, loadGoalProfile, monthYear, saveGoalProfile, type GoalProfile } from './goal'
+import { makePlan, txId, type Plan } from './plan'
+import { kindOf, suggestions, type Suggestion } from './mcc'
 
 const SESSION_KEY = 'customerId'
 
@@ -99,6 +106,66 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   const [wellnessError, setWellnessError] = useState(false)
   const [wellnessAttempt, setWellnessAttempt] = useState(0)
   const [error, setError] = useState('')
+  const year = new Date().getFullYear()
+  const [goal, setGoal] = useState(() => {
+    const saved = loadGoalProfile(customerId)
+    return saved?.year === year ? saved : null
+  })
+  // Every transaction, oldest first: what budgets and verdicts are worked out from.
+  const [allTxs, setAllTxs] = useState<Transaction[] | null>(null)
+  // Verdicts per purchase kind, for the goal they were classified against.
+  const [verdicts, setVerdicts] = useState<{ goal: string; map: Record<string, Verdict> } | null>(null)
+  const goalText = goal ? goalLabel(goal) : null
+  const currentVerdicts = verdicts && verdicts.goal === goalText ? verdicts.map : null
+
+  // Laya's answers per goal wording, asked once each (the goal form asks about drafts too).
+  const classified = useRef(new Map<string, Promise<Record<string, Verdict>>>())
+  const classifyFor = useCallback((text: string, rows: Transaction[]) => {
+    let answer = classified.current.get(text)
+    if (!answer) {
+      answer = classify(text, rows)
+      classified.current.set(text, answer)
+      answer.catch(() => classified.current.delete(text)) // let a failed round be retried
+    }
+    return answer
+  }, [])
+
+  // One round of Laya questions per goal: which kinds of purchase help it, and which are optional.
+  useEffect(() => {
+    if (!goalText || !allTxs || currentVerdicts) return
+    let stale = false
+    classifyFor(goalText, allTxs)
+      .then((map) => !stale && setVerdicts({ goal: goalText, map }))
+      .catch(() => {}) // classifier offline: no plan and no tags
+    return () => {
+      stale = true
+    }
+  }, [goalText, allTxs, currentVerdicts, classifyFor])
+
+  // For the goal form: what a draft goal would allow, before it is saved.
+  const savingRange = useCallback(
+    async (draft: GoalProfile) => {
+      if (!allTxs) return null
+      const draftPlan = makePlan(draft, allTxs, await classifyFor(goalLabel(draft), allTxs))
+      return draftPlan && { usual: draftPlan.usualSaving, max: draftPlan.maxSaving }
+    },
+    [allTxs, classifyFor],
+  )
+
+  const plan = useMemo(
+    () => (goal && allTxs && currentVerdicts ? makePlan(goal, allTxs, currentVerdicts) : null),
+    [goal, allTxs, currentVerdicts],
+  )
+  const tips = useMemo(() => (allTxs ? suggestions(allTxs, plan?.tight ?? false) : []), [allTxs, plan])
+  const tagOf = useCallback(
+    (tx: Transaction): Tag => {
+      if (!currentVerdicts) return undefined
+      if (currentVerdicts[verdictKey(tx) ?? ''] === 'good') return 'helps'
+      return plan?.overBudget.has(txId(tx)) ? 'over' : undefined
+    },
+    [currentVerdicts, plan],
+  )
+
   useEffect(() => {
     let stale = false
     getTransactions(customerId, 0)
@@ -121,7 +188,9 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
     let stale = false
     getWellnessTransactions(customerId)
       .then((rows) => {
-        if (!stale) setWellness(calculateWellness(rows))
+        if (stale) return
+        setAllTxs(rows)
+        setWellness(calculateWellness(rows))
       })
       .catch(() => !stale && setWellnessError(true))
       .finally(() => !stale && setWellnessLoading(false))
@@ -184,6 +253,16 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
         !error && <p className="text-sm text-muted">Loading…</p>
       ) : view === 'overview' ? (
         <Overview
+          year={year}
+          goal={goal}
+          onSaveGoal={(profile) => {
+            saveGoalProfile(customerId, profile)
+            setGoal(profile)
+          }}
+          plan={plan}
+          tips={tips}
+          savingRange={savingRange}
+          tagOf={tagOf}
           txs={txs}
           wellness={wellness}
           wellnessLoading={wellnessLoading}
@@ -194,6 +273,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
       ) : view === 'transactions' ? (
         <Transactions
           txs={txs}
+          tagOf={tagOf}
           hasMore={hasMore}
           loading={loadingMore}
           onMore={loadMore}
@@ -219,6 +299,9 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   )
 }
 
+// What a transaction row says about the goal, if anything.
+type Tag = 'helps' | 'over' | undefined
+
 function Card({ children }: { children: ReactNode }) {
   return <section className="rounded-lg border border-line bg-white">{children}</section>
 }
@@ -237,6 +320,13 @@ function scoreDescription(score: number): string {
 }
 
 function Overview({
+  year,
+  goal,
+  onSaveGoal,
+  plan,
+  tips,
+  savingRange,
+  tagOf,
   txs,
   wellness,
   wellnessLoading,
@@ -244,6 +334,13 @@ function Overview({
   onShowWellness,
   onShowAll,
 }: {
+  year: number
+  goal: GoalProfile | null
+  onSaveGoal: (profile: GoalProfile) => void
+  plan: Plan | null
+  tips: Suggestion[]
+  savingRange: (draft: GoalProfile) => Promise<{ usual: number; max: number } | null>
+  tagOf: (tx: Transaction) => Tag
   txs: Transaction[]
   wellness: Wellness | null
   wellnessLoading: boolean
@@ -251,6 +348,7 @@ function Overview({
   onShowWellness: () => void
   onShowAll: () => void
 }) {
+  const [goalFormOpen, setGoalFormOpen] = useState(false)
   const latest = txs[0]
   if (!latest) return <p className="text-sm text-muted">No account activity.</p>
   const score = wellness ? impactScore(wellness) : null
@@ -293,8 +391,21 @@ function Overview({
               </div>
             </div>
             <div className="my-4 rounded-lg bg-paper p-3 text-sm">
-              Hi! Soon you'll be able to ask me about your finances here.
+              {goal ? (
+                <>
+                  <span className="text-muted">Your goal for {year}</span>
+                  <span className="mt-0.5 block font-medium">{goalStatement(goal)}</span>
+                </>
+              ) : (
+                "Hi! Soon you'll be able to ask me about your finances here."
+              )}
             </div>
+            <button
+              onClick={() => setGoalFormOpen(true)}
+              className={`mb-4 ${goal ? 'self-start text-sm underline underline-offset-4' : 'rounded-md bg-ink px-3 py-2 text-sm font-medium text-white'}`}
+            >
+              {goal ? 'Edit goal' : `Set your financial goal for ${year}`}
+            </button>
             <div className="mt-auto flex gap-2">
               <input disabled aria-label="Chat message" placeholder="Ask a question…" className="min-w-0 flex-1 rounded-md border border-line bg-paper px-3 py-2 text-sm placeholder:text-muted" />
               <button disabled aria-label="Send message" className="rounded-md bg-ink px-3 text-sm text-white opacity-50">Send</button>
@@ -302,6 +413,10 @@ function Overview({
           </div>
         </Card>
       </div>
+
+      {goal && plan && <PlanCard goal={goal} plan={plan} />}
+
+      {tips.length > 0 && <TipsCard tips={tips} />}
 
       <Card>
         <div className="flex items-baseline justify-between px-5 pt-4 pb-1">
@@ -312,11 +427,135 @@ function Overview({
         </div>
         <ul className="divide-y divide-line px-5">
           {txs.slice(0, 5).map((tx, i) => (
-            <TxRow key={i} tx={tx} showDate />
+            <TxRow key={i} tx={tx} tag={tagOf(tx)} showDate />
           ))}
         </ul>
       </Card>
+
+      {goalFormOpen && (
+        <GoalForm
+          year={year}
+          initial={goal}
+          savingRange={savingRange}
+          onClose={() => setGoalFormOpen(false)}
+          onSave={(profile) => {
+            onSaveGoal(profile)
+            setGoalFormOpen(false)
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+function PlanCard({ goal, plan }: { goal: GoalProfile; plan: Plan }) {
+  const by = deadline(goal)
+  const [year, month] = plan.month.split('-')
+  return (
+    <Card>
+      <div className="p-5">
+        <h2 className="font-medium">Your plan</h2>
+        <p className="mt-2 text-sm">
+          {plan.requiredSaving !== null && by
+            ? `To reach ${eur(goal.targetEur)} by ${monthYear(by)}, set aside ${eur(plan.requiredSaving)} a month. You usually set aside ${eur(plan.usualSaving)}.`
+            : goal.goal === 'spend'
+              ? 'These budgets add up to 10% less than you usually spend.'
+              : 'These budgets are what you usually spend. Add an amount and a date to your goal for a plan that gets you there.'}
+        </p>
+        {!plan.reachable && (
+          <p className="mt-2 text-sm text-amber-900">
+            Even with every budget cut as far as is sensible
+            {plan.benchmark ? ', and never below the reasonable minimum for your household' : ''}, this pace is
+            out of reach. A later date or a
+            smaller amount would make the plan workable.
+          </p>
+        )}
+        {plan.tight && plan.reachable && (
+          <p className="mt-2 text-sm text-amber-900">
+            This is a tight plan: it leaves your everyday spending close to the reasonable minimum for your
+            household.
+          </p>
+        )}
+        {plan.householdNote && <p className="mt-2 text-sm text-muted">{plan.householdNote}</p>}
+        {plan.categories.length > 0 && (
+          <>
+            <p className="mt-4 text-sm text-muted">Monthly budgets · spent in {Number(month)}/{year}</p>
+            <ul className="mt-1">
+              {plan.categories.map((c) => {
+                const over = c.spent > c.budget
+                return (
+                  <li key={c.category} className="border-b border-line py-3 last:border-0 last:pb-0">
+                    <div className="flex justify-between gap-4 text-sm">
+                      <span>{c.category}</span>
+                      <span className={over ? 'font-medium text-amber-900' : ''}>
+                        {eur(c.spent)} <span className="text-muted">of {eur(c.budget)}</span>
+                      </span>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
+                      <div
+                        className={`h-full rounded-full ${over ? 'bg-amber-600' : 'bg-ink'}`}
+                        style={{ width: `${c.budget > 0 ? Math.min(100, (c.spent / c.budget) * 100) : 100}%` }}
+                      />
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </>
+        )}
+        {plan.benchmark && (
+          <>
+            <p className="mt-5 text-sm text-muted">
+              Your usual month next to a reasonable minimum for {plan.benchmark.household}
+              {plan.benchmark.exact ? '' : ' (the closest published household)'}
+            </p>
+            <ul className="mt-1">
+              {plan.benchmark.rows.map((row) => (
+                <li key={row.name} className="flex justify-between gap-4 border-b border-line py-2 text-sm last:border-0">
+                  <span>{row.name}</span>
+                  <span className={row.planned < row.reference ? 'font-medium text-amber-900' : ''}>
+                    {eur(row.usual)} <span className="text-muted">· minimum {eur(row.reference)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-muted">
+              Reference budgets 2025, Consumer Research Centre, University of Helsinki. Capital region, public
+              transport. No budget is cut below the minimum; amber marks what is already under it.
+            </p>
+          </>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+function TipsCard({ tips }: { tips: Suggestion[] }) {
+  return (
+    <Card>
+      <div className="p-5">
+        <h2 className="font-medium">Where you could pay less</h2>
+        <p className="mt-1 text-sm text-muted">Cheaper ways to cover the same needs, from your last three months.</p>
+        <ul className="mt-2">
+          {tips.map((tip) => (
+            <li key={tip.title} className="flex justify-between gap-4 border-b border-line py-3 last:border-0">
+              <div className="min-w-0 text-sm">
+                <p className="font-medium">{tip.title}</p>
+                <p className="mt-1 text-muted">{tip.text}</p>
+                {tip.source && <p className="mt-1 text-xs text-muted">Source: {tip.source}</p>}
+              </div>
+              {tip.saving !== null && (
+                <p className="shrink-0 text-right text-sm font-medium text-credit">
+                  −{eur(tip.saving)}
+                  <span className="block font-normal text-muted">a month</span>
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-3 text-xs text-muted">Savings are estimates: published Finnish price differences applied to your own spending.</p>
+      </div>
+    </Card>
   )
 }
 
@@ -416,19 +655,29 @@ function FinancialWellness({ data: w }: { data: Wellness }) {
 
 function TxRow({
   tx,
+  tag,
   showDate,
 }: {
   tx: Transaction
+  tag?: Tag
   showDate?: boolean
 }) {
   const type = label(tx.transaction_type)
   const title = tx.category ?? type
-  const detail = [showDate && date(tx.tx_date), type !== title && type].filter(Boolean).join(' · ')
+  // The kind of place it was bought at (from the MCC); otherwise the kind of transaction.
+  const where = kindOf(tx)?.name ?? (type !== title && type)
+  const detail = [showDate && date(tx.tx_date), where].filter(Boolean).join(' · ')
   return (
     <li className="flex items-center justify-between gap-4 py-3">
       <div className="min-w-0">
         <p className="flex items-center gap-2">
           <span className="truncate">{title}</span>
+          {tag === 'helps' && (
+            <span className="shrink-0 rounded-full bg-credit/10 px-2 py-0.5 text-xs font-medium text-credit">Helps your goal</span>
+          )}
+          {tag === 'over' && (
+            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">Over budget</span>
+          )}
         </p>
         {detail && <p className="truncate text-sm text-muted">{detail}</p>}
       </div>
@@ -441,11 +690,13 @@ function TxRow({
 
 function Transactions({
   txs,
+  tagOf,
   hasMore,
   loading,
   onMore,
 }: {
   txs: Transaction[]
+  tagOf: (tx: Transaction) => Tag
   hasMore: boolean
   loading: boolean
   onMore: () => void
@@ -469,7 +720,7 @@ function Transactions({
             </h3>
             <ul className="divide-y divide-line border-b border-line px-5 last:border-b-0">
               {rows.map((tx, i) => (
-                <TxRow key={i} tx={tx} />
+                <TxRow key={i} tx={tx} tag={tagOf(tx)} />
               ))}
             </ul>
           </div>
