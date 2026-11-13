@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
   PAGE_SIZE,
+  classify,
   getCustomer,
   getMortgage,
   getTransactions,
   type Mortgage,
   type Transaction,
+  type Verdict,
+  verdictKey,
 } from './api'
 import { date, eur, label, percent, signedEur } from './format'
 
@@ -86,6 +89,7 @@ function Login({ onLogin }: { onLogin: (id: string) => void }) {
 }
 
 type View = 'overview' | 'transactions' | 'loan'
+type Verdicts = Record<string, Verdict>
 
 function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => void }) {
   const [view, setView] = useState<View>('overview')
@@ -94,6 +98,36 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   const [loadingMore, setLoadingMore] = useState(false)
   const [mortgage, setMortgage] = useState<Mortgage | null>(null)
   const [error, setError] = useState('')
+  const goalKey = `goal:${customerId}`
+  const [goal, setGoal] = useState(() => localStorage.getItem(goalKey) ?? '')
+  // Verdicts for the current goal, by purchase kind (see verdictKey).
+  const [verdicts, setVerdicts] = useState<Verdicts>({})
+  const [classifyFailed, setClassifyFailed] = useState(false)
+
+  function saveGoal(value: string) {
+    if (value === goal) return
+    localStorage.setItem(goalKey, value)
+    setGoal(value)
+    setVerdicts({})
+    setClassifyFailed(false)
+  }
+
+  // Classify the purchase kinds that don't have a verdict for this goal yet.
+  useEffect(() => {
+    if (!goal || !txs || classifyFailed) return
+    const todo = txs.filter((tx) => {
+      const key = verdictKey(tx)
+      return key && !(key in verdicts)
+    })
+    if (todo.length === 0) return
+    let stale = false
+    classify(goal, todo)
+      .then((found) => !stale && setVerdicts((v) => ({ ...v, ...found })))
+      .catch(() => !stale && setClassifyFailed(true))
+    return () => {
+      stale = true
+    }
+  }, [goal, txs, verdicts, classifyFailed])
 
   useEffect(() => {
     let stale = false
@@ -164,9 +198,22 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
       {txs === null ? (
         !error && <p className="text-sm text-muted">Loading…</p>
       ) : view === 'overview' ? (
-        <Overview txs={txs} onShowAll={() => setView('transactions')} />
+        <Overview
+          txs={txs}
+          verdicts={verdicts}
+          goal={goal}
+          onGoal={saveGoal}
+          classifyFailed={classifyFailed}
+          onShowAll={() => setView('transactions')}
+        />
       ) : view === 'transactions' ? (
-        <Transactions txs={txs} hasMore={hasMore} loading={loadingMore} onMore={loadMore} />
+        <Transactions
+          txs={txs}
+          verdicts={verdicts}
+          hasMore={hasMore}
+          loading={loadingMore}
+          onMore={loadMore}
+        />
       ) : (
         mortgage && <Loan mortgage={mortgage} />
       )}
@@ -178,7 +225,85 @@ function Card({ children }: { children: ReactNode }) {
   return <section className="rounded-lg border border-line bg-white">{children}</section>
 }
 
-function Overview({ txs, onShowAll }: { txs: Transaction[]; onShowAll: () => void }) {
+function Goal({
+  goal,
+  onGoal,
+  failed,
+}: {
+  goal: string
+  onGoal: (goal: string) => void
+  failed: boolean
+}) {
+  const [draft, setDraft] = useState(goal)
+  return (
+    <Card>
+      <form
+        className="p-5"
+        onSubmit={(e) => {
+          e.preventDefault()
+          onGoal(draft.trim())
+        }}
+      >
+        <label htmlFor="goal" className="mb-1.5 block text-sm text-muted">
+          Your goal
+        </label>
+        <div className="flex gap-2">
+          <input
+            id="goal"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            maxLength={300}
+            placeholder="e.g. Save 20 000 € for a flat"
+            className="min-w-0 flex-1 rounded-md border border-line bg-white px-3 py-2 outline-none focus:border-ink"
+          />
+          <button
+            disabled={draft.trim() === goal}
+            className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            Save
+          </button>
+        </div>
+        <p className={`mt-2 text-sm ${failed ? 'text-red-700' : 'text-muted'}`}>
+          {failed
+            ? 'Could not rate your purchases right now.'
+            : goal
+              ? 'Purchases are marked as good or bad for this goal, or neutral.'
+              : 'Set a goal to see which purchases help it and which work against it.'}
+        </p>
+      </form>
+    </Card>
+  )
+}
+
+const VERDICT_STYLE: Record<Verdict, string> = {
+  good: 'bg-credit/10 text-credit',
+  bad: 'bg-red-700/10 text-red-700',
+  neutral: 'bg-paper text-muted',
+}
+
+function VerdictBadge({ verdict }: { verdict: Verdict }) {
+  return (
+    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${VERDICT_STYLE[verdict]}`}>
+      {label(verdict)}
+    </span>
+  )
+}
+
+function Overview({
+  txs,
+  verdicts,
+  goal,
+  onGoal,
+  classifyFailed,
+  onShowAll,
+}: {
+  txs: Transaction[]
+  verdicts: Verdicts
+  goal: string
+  onGoal: (goal: string) => void
+  classifyFailed: boolean
+  onShowAll: () => void
+}) {
   const latest = txs[0]
   if (!latest) return <p className="text-sm text-muted">No account activity.</p>
 
@@ -193,6 +318,8 @@ function Overview({ txs, onShowAll }: { txs: Transaction[]; onShowAll: () => voi
         </div>
       </Card>
 
+      <Goal goal={goal} onGoal={onGoal} failed={classifyFailed} />
+
       <Card>
         <div className="flex items-baseline justify-between px-5 pt-4 pb-1">
           <h2 className="font-medium">Latest transactions</h2>
@@ -202,7 +329,7 @@ function Overview({ txs, onShowAll }: { txs: Transaction[]; onShowAll: () => voi
         </div>
         <ul className="divide-y divide-line px-5">
           {txs.slice(0, 5).map((tx, i) => (
-            <TxRow key={i} tx={tx} showDate />
+            <TxRow key={i} tx={tx} verdicts={verdicts} showDate />
           ))}
         </ul>
       </Card>
@@ -210,14 +337,26 @@ function Overview({ txs, onShowAll }: { txs: Transaction[]; onShowAll: () => voi
   )
 }
 
-function TxRow({ tx, showDate }: { tx: Transaction; showDate?: boolean }) {
+function TxRow({
+  tx,
+  verdicts,
+  showDate,
+}: {
+  tx: Transaction
+  verdicts: Verdicts
+  showDate?: boolean
+}) {
+  const verdict = verdicts[verdictKey(tx) ?? '']
   const type = label(tx.transaction_type)
   const title = tx.category ?? type
   const detail = [showDate && date(tx.tx_date), type !== title && type].filter(Boolean).join(' · ')
   return (
     <li className="flex items-center justify-between gap-4 py-3">
       <div className="min-w-0">
-        <p className="truncate">{title}</p>
+        <p className="flex items-center gap-2">
+          <span className="truncate">{title}</span>
+          {verdict && <VerdictBadge verdict={verdict} />}
+        </p>
         {detail && <p className="truncate text-sm text-muted">{detail}</p>}
       </div>
       <p className={`shrink-0 font-medium ${tx.tx_amount_eur > 0 ? 'text-credit' : ''}`}>
@@ -229,11 +368,13 @@ function TxRow({ tx, showDate }: { tx: Transaction; showDate?: boolean }) {
 
 function Transactions({
   txs,
+  verdicts,
   hasMore,
   loading,
   onMore,
 }: {
   txs: Transaction[]
+  verdicts: Verdicts
   hasMore: boolean
   loading: boolean
   onMore: () => void
@@ -257,7 +398,7 @@ function Transactions({
             </h3>
             <ul className="divide-y divide-line border-b border-line px-5 last:border-b-0">
               {rows.map((tx, i) => (
-                <TxRow key={i} tx={tx} />
+                <TxRow key={i} tx={tx} verdicts={verdicts} />
               ))}
             </ul>
           </div>

@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "client"],
       "port": 5173
+    },
+    {
+      "name": "laya",
+      "runtimeExecutable": "server/.venv/bin/python",
+      "runtimeArgs": ["server/laya_server.py"],
+      "port": 8000,
+      "autoPort": false
     }
   ]
 }
