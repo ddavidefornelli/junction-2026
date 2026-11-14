@@ -32,7 +32,7 @@ type Tip = {
   saves: number | null
   part?: number // default: all of it
   source: string | null // null: common sense, not a published comparison
-  tightOnly?: true // worth saying only to someone whose plan is tight
+  tightOnly?: true // worth saying only to someone whose goal is out of reach
 }
 
 const KINDS: Record<string, Kind> = {
@@ -145,7 +145,7 @@ const MIN_SPEND = 20 // euros a month, for a tip with no figure to be worth maki
 // Cheaper ways to cover what the customer already buys, biggest saving first.
 // The gentle ones (hypermarket, public transport) are always offered; the ones
 // that ask for a change of habit, or have no figure behind them, only when the
-// plan is tight. `all` is every transaction, oldest first.
+// goal is out of reach with the budgets alone (`tight`). `all` is every transaction, oldest first.
 export function suggestions(all: Transaction[], tight: boolean): Suggestion[] {
   const months = [...new Set(all.map((tx) => tx.tx_date.slice(0, 7)))].sort()
   const window = new Set(months.slice(0, -1).slice(-WINDOW_MONTHS)) // full months only

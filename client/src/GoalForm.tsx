@@ -1,13 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { eur } from './format'
 import {
-  COMMUTE_KM,
-  COMMUTE_MODE,
-  COUNTS_ADULTS,
-  COUNTS_CHILDREN,
   DEADLINES,
   GOALS,
-  HOUSING,
   monthYear,
   paceOptions,
   type GoalProfile,
@@ -75,11 +70,6 @@ export function GoalForm({
       targetEur: null,
       deadlineMonths: null,
       pace: null,
-      adults: null,
-      children: null,
-      housing: null,
-      commuteKm: null,
-      commuteMode: null,
     },
   )
   const set = (patch: Partial<GoalProfile>) => setP((prev) => ({ ...prev, ...patch }))
@@ -90,10 +80,10 @@ export function GoalForm({
     if (el && !el.open) el.showModal()
   }, [])
 
-  // What is realistic depends on the goal, the household and the commute, so it
-  // is looked up again when those change (after a pause, while a goal is typed).
+  // What is realistic depends on the goal, so it is looked up again when that
+  // changes (after a pause, while a goal is typed).
   const [range, setRange] = useState<{ usual: number; max: number } | null>(null)
-  const { goal, goalText, adults, children, commuteKm, commuteMode } = p
+  const { goal, goalText } = p
   useEffect(() => {
     if (!goal || (goal === 'other' && !goalText.trim())) return
     let stale = false
@@ -107,7 +97,7 @@ export function GoalForm({
       clearTimeout(timer)
     }
     // Only the answers that change the range; the amount and the pace do not.
-  }, [goal, goalText, adults, children, commuteKm, commuteMode, savingRange])
+  }, [goal, goalText, savingRange])
 
   // Instead of asking for a date that may be out of reach, offer paces that all
   // work for this customer; each one implies its own date.
@@ -123,7 +113,6 @@ export function GoalForm({
 
   const ready = p.goal !== null && (p.goal !== 'other' || p.goalText.trim() !== '')
   const hasAmount = p.goal === 'buffer' || p.goal === 'home' || p.goal === 'debt'
-  const commutes = p.commuteKm !== null && p.commuteKm !== 'none'
 
   // With the range unknown (classifier offline) the plain lengths below are offered instead.
   const months = !hasAmount || !p.targetEur ? null : range ? (pace?.months ?? null) : Number(p.deadlineMonths) || null
@@ -144,7 +133,6 @@ export function GoalForm({
         initial?.setAt && Number(initial.deadlineMonths) === months
           ? initial.setAt
           : new Date().toISOString().slice(0, 10),
-      commuteMode: commutes ? p.commuteMode : null,
     })
   }
 
@@ -162,7 +150,7 @@ export function GoalForm({
             Your financial goal for {year}
           </h2>
           <p className="mt-1 text-sm text-muted">
-            A few taps. Only the goal is required; the rest makes your analysis more accurate.
+            A few taps. Only the goal is required.
           </p>
         </div>
 
@@ -243,18 +231,6 @@ export function GoalForm({
             value={p.deadlineMonths ? (String(p.deadlineMonths) as (typeof DEADLINES)[number][0]) : null}
             onChange={(length) => set({ deadlineMonths: Number(length) })}
           />
-        )}
-
-        <div className="grid grid-cols-2 gap-4">
-          <Chips legend="Adults at home" name="adults" options={COUNTS_ADULTS} value={p.adults} onChange={(adults) => set({ adults })} />
-          <Chips legend="Children" name="children" options={COUNTS_CHILDREN} value={p.children} onChange={(children) => set({ children })} />
-        </div>
-
-        <Chips legend="Your home" name="housing" options={HOUSING} value={p.housing} onChange={(housing) => set({ housing })} />
-
-        <Chips legend="Distance to work, one way" name="commuteKm" options={COMMUTE_KM} value={p.commuteKm} onChange={(commuteKm) => set({ commuteKm })} />
-        {commutes && (
-          <Chips legend="How do you get there?" name="commuteMode" options={COMMUTE_MODE} value={p.commuteMode} onChange={(commuteMode) => set({ commuteMode })} />
         )}
 
         <div className="flex justify-end gap-2 border-t border-line pt-4">

@@ -156,7 +156,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
     () => (goal && allTxs && currentVerdicts ? makePlan(goal, allTxs, currentVerdicts) : null),
     [goal, allTxs, currentVerdicts],
   )
-  const tips = useMemo(() => (allTxs ? suggestions(allTxs, plan?.tight ?? false) : []), [allTxs, plan])
+  const tips = useMemo(() => (allTxs ? suggestions(allTxs, plan ? !plan.reachable : false) : []), [allTxs, plan])
   const tagOf = useCallback(
     (tx: Transaction): Tag => {
       if (!currentVerdicts) return undefined
@@ -464,19 +464,10 @@ function PlanCard({ goal, plan }: { goal: GoalProfile; plan: Plan }) {
         </p>
         {!plan.reachable && (
           <p className="mt-2 text-sm text-amber-900">
-            Even with every budget cut as far as is sensible
-            {plan.benchmark ? ', and never below the reasonable minimum for your household' : ''}, this pace is
-            out of reach. A later date or a
+            Even with every budget cut as far as is sensible, this pace is out of reach. A later date or a
             smaller amount would make the plan workable.
           </p>
         )}
-        {plan.tight && plan.reachable && (
-          <p className="mt-2 text-sm text-amber-900">
-            This is a tight plan: it leaves your everyday spending close to the reasonable minimum for your
-            household.
-          </p>
-        )}
-        {plan.householdNote && <p className="mt-2 text-sm text-muted">{plan.householdNote}</p>}
         {plan.categories.length > 0 && (
           <>
             <p className="mt-4 text-sm text-muted">Monthly budgets · spent in {Number(month)}/{year}</p>
@@ -501,28 +492,6 @@ function PlanCard({ goal, plan }: { goal: GoalProfile; plan: Plan }) {
                 )
               })}
             </ul>
-          </>
-        )}
-        {plan.benchmark && (
-          <>
-            <p className="mt-5 text-sm text-muted">
-              Your usual month next to a reasonable minimum for {plan.benchmark.household}
-              {plan.benchmark.exact ? '' : ' (the closest published household)'}
-            </p>
-            <ul className="mt-1">
-              {plan.benchmark.rows.map((row) => (
-                <li key={row.name} className="flex justify-between gap-4 border-b border-line py-2 text-sm last:border-0">
-                  <span>{row.name}</span>
-                  <span className={row.planned < row.reference ? 'font-medium text-amber-900' : ''}>
-                    {eur(row.usual)} <span className="text-muted">· minimum {eur(row.reference)}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs text-muted">
-              Reference budgets 2025, Consumer Research Centre, University of Helsinki. Capital region, public
-              transport. No budget is cut below the minimum; amber marks what is already under it.
-            </p>
           </>
         )}
       </div>

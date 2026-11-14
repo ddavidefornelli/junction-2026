@@ -1,5 +1,4 @@
-// The customer's goal for the year plus the bit of life context (household,
-// housing, commute) that makes an analysis of their spending more accurate.
+// The customer's goal for the year.
 // Kept in this browser per customer; the bank API is read-only.
 
 export const GOALS = [
@@ -42,27 +41,6 @@ export function paceOptions(target: number, usual: number, max: number): Pace[] 
   return paces
 }
 
-export const COUNTS_ADULTS = [['1', '1'], ['2', '2'], ['3+', '3+']] as const
-export const COUNTS_CHILDREN = [['0', '0'], ['1', '1'], ['2', '2'], ['3+', '3+']] as const
-export const HOUSING = [
-  ['rent', 'Rent'],
-  ['mortgage', 'Own, with a mortgage'],
-  ['own', 'Own, no mortgage'],
-  ['family', 'With family'],
-] as const
-export const COMMUTE_KM = [
-  ['none', 'No commute'],
-  ['<5', 'Under 5 km'],
-  ['5-20', '5–20 km'],
-  ['20-50', '20–50 km'],
-  ['50+', 'Over 50 km'],
-] as const
-export const COMMUTE_MODE = [
-  ['car', 'Car'],
-  ['transit', 'Public transport'],
-  ['active', 'Bike or walk'],
-] as const
-
 type Id<T extends readonly (readonly [string, string])[]> = T[number][0]
 
 export type GoalProfile = {
@@ -73,11 +51,6 @@ export type GoalProfile = {
   deadlineMonths?: number | null // how long the customer gave themselves…
   setAt?: string // …counted from this day (ISO date)
   pace?: PaceId | null // the pace that length came from, when it was picked as one
-  adults: Id<typeof COUNTS_ADULTS> | null
-  children: Id<typeof COUNTS_CHILDREN> | null
-  housing: Id<typeof HOUSING> | null
-  commuteKm: Id<typeof COMMUTE_KM> | null
-  commuteMode: Id<typeof COMMUTE_MODE> | null
 }
 
 const key = (customerId: string) => `goalProfile:${customerId}`
@@ -133,25 +106,4 @@ export function goalStatement(p: GoalProfile): string {
   if (!p.targetEur) return goalLabel(p)
   const d = deadline(p)
   return `${goalLabel(p)} (${euros(p.targetEur)}${d ? ` by ${monthYear(d)}` : ''})`
-}
-
-// Everything the customer told us, as plain sentences for an AI prompt.
-export function profileSummary(p: GoalProfile): string {
-  const parts = [`Goal for ${p.year}: ${goalStatement(p)}.`]
-  if (p.adults || p.children) {
-    const household = [
-      p.adults && `${p.adults} adult${p.adults === '1' ? '' : 's'}`,
-      p.children && `${p.children} child${p.children === '1' ? '' : 'ren'}`,
-    ].filter(Boolean)
-    parts.push(`Household: ${household.join(', ')}.`)
-  }
-  if (p.housing) parts.push(`Housing: ${text(HOUSING, p.housing)!.toLowerCase()}.`)
-  if (p.commuteKm === 'none') parts.push('No commute to work.')
-  else if (p.commuteKm) {
-    const mode = text(COMMUTE_MODE, p.commuteMode)?.toLowerCase()
-    parts.push(
-      `Commute: ${text(COMMUTE_KM, p.commuteKm)!.toLowerCase()} each way${mode ? ` by ${mode}` : ''}.`,
-    )
-  }
-  return parts.join(' ')
 }

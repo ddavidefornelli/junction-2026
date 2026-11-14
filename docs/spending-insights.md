@@ -4,6 +4,22 @@ Working notes for the plan, the reference-budget comparison and the "Where you
 could pay less" card. Written 14 November 2026. Update it when the logic or a
 source changes.
 
+> **Update, 14 November 2026 (later the same day).** The household, home and
+> commute questions were removed from the goal form to keep it simple. With no
+> household to match, the reference-budget comparison, the floor on cuts and
+> the "tight plan" test went with them, and so did the household adjustments to
+> the cut limits. Sections 3.2 and 3.3 describe what was built and is now
+> removed; the code is in git history (commit `c13f03f`, file
+> `client/src/refbudget.ts`). Why it was removed: the floor compared one
+> person's account with a whole household's budget, so two adults got almost no
+> room to save while "3+ adults", which has no published budget, got the most.
+>
+> What applies now:
+> - Cut limits: optional categories 50%, groceries and transport 0%, taxis and
+>   bars 50%, convenience stores 30%, health care never budgeted.
+> - "Tight only" tips are shown when the goal is out of reach with the budgets alone.
+> - The MCC labels, MCC budget lines, tips and their sources (3.1, 3.4, 4) are unchanged.
+
 ## 1. What the dataset gives us
 
 Profiled from the full `tx_junction_transactions.csv` (3.6M rows, 5,100 customers).
@@ -51,7 +67,7 @@ Profiled from the full `tx_junction_transactions.csv` (3.6M rows, 5,100 customer
 The cut limits (50%, 30%) are our own judgement, not sourced. Every other MCC
 stays inside its category's budget; purchases with no MCC follow the category rule.
 
-### 3.2 Reference budgets (`client/src/refbudget.ts`)
+### 3.2 Reference budgets (removed, see the update at the top)
 
 The published rows are grouped to match the bank's categories:
 
@@ -84,7 +100,7 @@ not asked, so where the published budgets differ the more generous one is used:
 "Getting around" is dropped when the customer commutes by car, because the
 published figure assumes public transport.
 
-### 3.3 Floor and tight plan (`client/src/plan.ts`)
+### 3.3 Floor and tight plan (removed, see the update at the top)
 
 **Floor.** For each group in 3.2, the budget lines in it can together give up
 no more than what the customer spends above the reference amount. If they
@@ -203,3 +219,5 @@ table shows 54; the code follows the university table.
 - Name the cause on over-budget tags ("Taxis over budget").
 - Reference budgets are 2025 prices and the transactions run to late 2026:
   index them with Statistics Finland's consumer price index?
+- If the household questions come back: compare per adult rather than per
+  household, or ask whether the account covers the whole household's spending.
