@@ -7,13 +7,12 @@ import {
   getTransactions,
   getWellnessTransactions,
   classify,
-  spendingKey,
   type Mortgage,
   type SpendingClass,
   type Transaction,
 } from './api'
 import { date, eur, label, percent, signedEur } from './format'
-import { calculateWellness, emptyAnswers, visibleWellnessScore, wellnessScores, type Wellness, type WellnessAnswers } from './wellness'
+import { calculateWellness, emptyAnswers, visibleWellnessScore, wellnessBreakdown, type Wellness, type WellnessAnswers } from './wellness'
 import { kindOf, suggestions, type Suggestion } from './mcc'
 import { makeBaskets, type Baskets } from './baskets'
 import { BasketsCard } from './BasketsCard'
@@ -31,6 +30,11 @@ import { AnalysisSteps, useStagedProgress } from './Analysis'
 import { CipherText, ProtectedBadge, SecureLoading, SecureNote, ShieldSeal, clearSession, linkEncrypted, markSessionStart } from './Security'
 import { APPROVED_COLLATERAL_COVER, APPROVED_EQUITY_SHARE, getMortgageSteps, mortgageFacts, type MortgageFacts, type MortgageStep } from './mortgage'
 import { financialProfileTagline } from './profile'
+import { InsightCard } from './InsightCard'
+import { ChallengeCard, useChallenge } from './ChallengeCard'
+import { FutureCard } from './FutureCall'
+import { makeFuture } from './future'
+import { makeInsights } from './insights'
 
 const SESSION_KEY = 'customerId'
 
@@ -161,7 +165,7 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
   return (
     <main className="flex min-h-dvh items-center justify-center px-4">
       <form onSubmit={submit} className="w-full max-w-xs">
-        <h1 className="mb-8 text-2xl font-semibold tracking-tight">Pankki</h1>
+        <h1 className="mb-8 text-5xl font-extrabold tracking-tight">Pankki</h1>
         {loggedOut && (
           <p role="status" className="mb-5 rounded-md border border-credit/30 bg-credit/5 px-3 py-2 text-sm text-credit">
             You are logged out. Your session was cleared from this tab.
@@ -211,7 +215,7 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
         {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
         <button
           disabled={busy}
-          className="mt-4 w-full rounded-md bg-ink py-2.5 font-medium text-white disabled:opacity-50"
+          className="mt-4 w-full rounded-full bg-accent py-3 font-semibold text-white hover:bg-accent/90 disabled:opacity-50"
         >
           {busy ? 'Checking…' : 'Log in'}
         </button>
@@ -237,16 +241,8 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   const [age, setAge] = useState<number | null>(null) // for the population benchmark
   const [postalCode, setPostalCode] = useState<string | null>(null) // for the area card
   const [wellness, setWellness] = useState<Wellness | null>(null)
-  const [answers, setAnswers] = useState<WellnessAnswers>(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem(`wellness-v1:${customerId}`) ?? 'null')
-      return stored && typeof stored === 'object' ? { ...emptyAnswers(), ...stored } : emptyAnswers()
-    } catch { return emptyAnswers() }
-  })
-  const saveAnswers = (next: WellnessAnswers) => {
-    setAnswers(next)
-    try { localStorage.setItem(`wellness-v1:${customerId}`, JSON.stringify(next)) } catch { /* private browsing */ }
-  }
+  // The score is worked out from the account alone: no questionnaire.
+  const answers = useMemo(emptyAnswers, [])
   const [wellnessLoading, setWellnessLoading] = useState(false)
   const [wellnessError, setWellnessError] = useState(false)
   const [wellnessAttempt, setWellnessAttempt] = useState(0)
@@ -255,7 +251,6 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   const [allTxs, setAllTxs] = useState<Transaction[] | null>(null)
   const [spendingClasses, setSpendingClasses] = useState<Record<string, SpendingClass> | null>(null)
   const [classifyError, setClassifyError] = useState<string | null>(null)
-  const [classifyAttempt, setClassifyAttempt] = useState(0)
   const classified = useRef<Promise<Record<string, SpendingClass>> | null>(null)
   const classifyOnce = useCallback((rows: Transaction[]) => {
     if (!classified.current) {
@@ -278,7 +273,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
     return () => {
       stale = true
     }
-  }, [allTxs, spendingClasses, classifyError, classifyAttempt, classifyOnce])
+  }, [allTxs, spendingClasses, classifyError, classifyOnce])
   const tips = useMemo(() => (allTxs ? suggestions(allTxs) : []), [allTxs])
   const baskets = useMemo(() => (allTxs ? makeBaskets(allTxs) : null), [allTxs])
   const area = useMemo(
@@ -334,15 +329,6 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
     holdAt: STEPS_ANALYSIS.length - 2,
   })
   const mortgageInfo = useMemo(() => (mortgage && allTxs ? mortgageFacts(mortgage, allTxs) : null), [mortgage, allTxs])
-  const tagOf = useCallback(
-    (tx: Transaction): Tag => {
-      if (!spendingClasses) return undefined
-      const key = spendingKey(tx)
-      return key ? spendingClasses[key] : undefined
-    },
-    [spendingClasses],
-  )
-
   useEffect(() => {
     let stale = false
     getTransactions(customerId, 0)
@@ -406,7 +392,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   return (
     <div className="mx-auto min-h-dvh max-w-2xl px-4 pb-28">
       <header className="flex items-center justify-between py-5">
-        <span className="text-lg font-semibold tracking-tight">Pankki</span>
+        <span className="font-display text-2xl font-extrabold tracking-tight">Pankki</span>
         <div className="flex items-center gap-3 text-sm sm:gap-4">
           <ProtectedBadge />
           <span className="text-muted">{customerId}</span>
@@ -416,15 +402,15 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
         </div>
       </header>
 
-      <nav className="mb-6 flex gap-6 overflow-x-auto border-b border-line text-sm">
+      <nav className="mb-6 flex gap-2 overflow-x-auto text-sm">
         {tabs.map(([id, name]) => (
           <button
             key={id}
             onClick={() => setView(id)}
             aria-current={view === id || ((view === 'wellness' || view === 'score-details') && id === 'overview') ? 'page' : undefined}
-            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 pb-3 ${
+            className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 ${
               view === id || ((view === 'wellness' || view === 'score-details') && id === 'overview')
-                ? 'border-ink font-medium' : 'border-transparent text-muted'
+                ? 'bg-ink font-semibold text-white' : 'bg-white text-muted hover:text-ink'
             }`}
           >
             {name}
@@ -442,20 +428,18 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           baskets={baskets}
           benchmark={benchmark}
           area={area}
-          tagOf={tagOf}
+          customerId={customerId}
+          age={age}
+          context={chatContext}
+          allTxs={allTxs}
           txs={txs}
           wellness={wellness}
           answers={answers}
           wellnessLoading={wellnessLoading}
           wellnessError={wellnessError}
-          classificationLoading={!spendingClasses && classifyError === null}
-          classificationError={classifyError}
-          onRetryClassification={() => {
-            setClassifyError(null)
-            setClassifyAttempt((n) => n + 1)
-          }}
           onShowWellness={() => setView('score-details')}
           onShowAll={() => setView('transactions')}
+          onAsk={askScenario}
         />
       ) : view === 'score-details' ? (
         <ScoreDetails
@@ -470,7 +454,6 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
       ) : view === 'transactions' ? (
         <Transactions
           txs={txs}
-          tagOf={tagOf}
           hasMore={hasMore}
           loading={loadingMore}
           onMore={loadMore}
@@ -487,7 +470,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
         ) : wellnessLoading || !wellness ? (
           <p className="text-sm text-muted">{wellnessLoading ? 'Calculating across all transactions…' : 'No transactions available.'}</p>
         ) : (
-          <FinancialWellness data={wellness} answers={answers} onAnswers={saveAnswers} />
+          <FinancialWellness data={wellness} answers={answers} />
         )
       ) : (
         mortgage && (
@@ -567,7 +550,7 @@ function WalterBar({ chat }: { chat: (question: string | null, onAsked: () => vo
             setDraft('')
             setOpen(true)
           }}
-          className="mx-auto flex max-w-2xl items-center gap-3 rounded-full border border-line bg-white p-2 shadow-lg"
+          className="mx-auto flex max-w-2xl items-center gap-3 rounded-full bg-white p-2 shadow-[0_8px_30px_rgb(12_16_48/0.16)]"
         >
           <WalterAvatar className="h-10 w-10 shrink-0" />
           <input
@@ -580,7 +563,7 @@ function WalterBar({ chat }: { chat: (question: string | null, onAsked: () => vo
           />
           <button
             aria-label="Send to Walter"
-            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-ink text-white hover:bg-ink/90"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:bg-accent/90"
           >
             <span aria-hidden="true">→</span>
           </button>
@@ -591,11 +574,8 @@ function WalterBar({ chat }: { chat: (question: string | null, onAsked: () => vo
   )
 }
 
-// Laya's category-level reading of a transaction.
-type Tag = SpendingClass | undefined
-
 function Card({ children }: { children: ReactNode }) {
-  return <section className="rounded-lg border border-line bg-white">{children}</section>
+  return <section className="rounded-lg bg-white">{children}</section>
 }
 
 const SCORE_DESCRIPTIONS = [
@@ -616,62 +596,69 @@ function Overview({
   baskets,
   benchmark,
   area,
-  tagOf,
+  customerId,
+  age,
+  context,
+  allTxs,
   txs,
   wellness,
   answers,
   wellnessLoading,
   wellnessError,
-  classificationLoading,
-  classificationError,
-  onRetryClassification,
   onShowWellness,
   onShowAll,
+  onAsk,
 }: {
   tips: Suggestion[]
   baskets: Baskets | null
   benchmark: Benchmark | null
   area: AreaView | null
-  tagOf: (tx: Transaction) => Tag
+  customerId: string
+  age: number | null
+  context: string | null // what Walter knows; the future self answers from it too
+  allTxs: Transaction[] | null
   txs: Transaction[]
   wellness: Wellness | null
   answers: WellnessAnswers
   wellnessLoading: boolean
   wellnessError: boolean
-  classificationLoading: boolean
-  classificationError: string | null
-  onRetryClassification: () => void
   onShowWellness: () => void
   onShowAll: () => void
+  onAsk: (question: string) => void
 }) {
-  const latest = txs[0]
-  if (!latest) return <p className="text-sm text-muted">No account activity.</p>
   const displayScore = wellness ? visibleWellnessScore(wellness, answers) : { value: null, provisional: false }
   const score = displayScore.value
+  // What is shown is picked from the customer's own data, the most valuable first (see insights.ts).
+  const insights = useMemo(
+    () => (allTxs ? makeInsights({ score, baskets, benchmark, tips, all: allTxs }) : []),
+    [allTxs, score, baskets, benchmark, tips],
+  )
+  const [challenge, setChallenge] = useChallenge(customerId)
+  const challengeCard = allTxs && (
+    <ChallengeCard active={challenge} onChange={setChallenge} all={allTxs} baskets={baskets} tips={tips} onAsk={onAsk} />
+  )
+  const future = useMemo(() => (allTxs ? makeFuture({ all: allTxs, baskets, challenge }) : null), [allTxs, baskets, challenge])
+  const latest = txs[0]
+  if (!latest) return <p className="text-sm text-muted">No account activity.</p>
 
   return (
     <div className="space-y-6">
-      <Card>
-        <div className="p-5">
-          <p className="text-sm text-muted">Current account · {latest.bank_account_id}</p>
-          <p className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-            <CipherText id="balance" text={eur(latest.balance_after_eur)} />
-          </p>
-          <div className="mt-3">
-            <SecureNote>Read-only view. Nothing in this app can move your money.</SecureNote>
-          </div>
-        </div>
-      </Card>
+      <section className="rounded-lg bg-accent p-6 text-white sm:p-8">
+        <p className="text-sm text-white/85">Current account {latest.bank_account_id}</p>
+        <p className="mt-3 font-display text-5xl font-extrabold tracking-tight sm:text-6xl">
+          <CipherText id="balance" text={eur(latest.balance_after_eur)} />
+        </p>
+        <p className="mt-4 text-xs text-white/85">Read-only view. Nothing in this app can move your money.</p>
+      </section>
 
       <Card>
-        <div className="flex h-full min-h-40 flex-col p-5">
-          <h2 className="border-b border-line pb-3 font-medium">Your financial profile</h2>
+        <div className="flex h-full min-h-40 flex-col p-6">
+          <h2 className="text-lg font-bold">Your financial profile</h2>
           <div className="my-4 flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-3xl font-semibold leading-none text-emerald-900">
+              <p className="font-display text-4xl font-extrabold leading-none tracking-tight">
                 {score === null ? '—' : `${score} / 100`}
               </p>
-              {displayScore.provisional && <p className="mt-1 text-xs text-muted">Preliminary · account activity only</p>}
               <p className="mt-2 text-sm text-muted">
                 {displayScore.provisional
                   ? 'Preliminary · account activity only.'
@@ -686,42 +673,47 @@ function Overview({
             </div>
             <WellnessApple stage={score === null ? null : Math.min(4, Math.floor(score / 20))} golden={score === 100 && !displayScore.provisional} className="size-16 shrink-0" />
           </div>
-          <button onClick={onShowWellness} className="mt-auto flex w-full items-center justify-center gap-1.5 rounded-md border border-line px-3 py-2.5 text-sm font-medium hover:bg-paper">
-            See details <span aria-hidden="true">→</span>
+          <button onClick={onShowWellness} className="mt-auto flex w-full items-center justify-center rounded-full bg-paper px-3 py-3 text-sm font-semibold hover:bg-line">
+            See details
           </button>
         </div>
       </Card>
 
-      {baskets && <BasketsCard data={baskets} />}
+      {future && <FutureCard future={future} context={context} age={age} />}
 
-      {benchmark && <BenchmarkCard data={benchmark} />}
+      {/* A running challenge comes first; the offer to start one comes after the insights. */}
+      {challenge && challengeCard}
 
-      {area && <AreaCard data={area} />}
+      {insights.map((insight, i) => (
+        <InsightCard key={insight.id} insight={insight} first={i === 0} onAsk={onAsk} />
+      ))}
 
-      {tips.length > 0 && <TipsCard tips={tips} />}
+      {!challenge && challengeCard}
+
+      {(baskets || benchmark || area || tips.length > 0) && (
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-center gap-1.5 rounded-full bg-white px-3 py-3 text-sm font-semibold hover:bg-line [&::-webkit-details-marker]:hidden">
+            All your numbers <span aria-hidden="true" className="group-open:rotate-180">↓</span>
+          </summary>
+          <div className="mt-6 space-y-6">
+            {baskets && <BasketsCard data={baskets} />}
+            {benchmark && <BenchmarkCard data={benchmark} />}
+            {area && <AreaCard data={area} />}
+            {tips.length > 0 && <TipsCard tips={tips} />}
+          </div>
+        </details>
+      )}
 
       <Card>
         <div className="flex items-baseline justify-between px-5 pt-4 pb-1">
-          <h2 className="font-medium">Latest transactions</h2>
+          <h2 className="text-lg font-bold">Latest transactions</h2>
           <button onClick={onShowAll} className="text-sm underline underline-offset-4">
             Show all
           </button>
         </div>
-        <div className="px-5 pb-2">
-          {classificationLoading ? (
-            <p role="status" className="text-xs text-muted">Laya is classifying your spending as essential, flexible, or money set aside…</p>
-          ) : classificationError ? (
-            <p role="alert" className="text-xs text-red-700">
-              Laya could not classify your spending.{' '}
-              <button onClick={onRetryClassification} className="underline underline-offset-2">Try again</button>
-            </p>
-          ) : (
-            <p className="text-xs text-muted">Laya’s labels are estimates based on each transaction category and type.</p>
-          )}
-        </div>
         <ul className="divide-y divide-line px-5">
           {txs.slice(0, 5).map((tx, i) => (
-            <TxRow key={i} tx={tx} tag={tagOf(tx)} showDate />
+            <TxRow key={i} tx={tx} showDate />
           ))}
         </ul>
       </Card>
@@ -785,7 +777,7 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
     ...(w && w.negativeDays > 0 ? [{ title: 'Build a safety cushion', summary: 'Be ready for unexpected costs.', detail: 'Putting a little aside regularly can help you cover surprises without dipping into an overdraft.' }] : []),
     ...(w && w.savingsRate !== null && w.savingsRate < 0.2 ? [{ title: 'Save a little each month', summary: 'Small amounts can add up.', detail: 'Choose an amount you can afford and set it aside after each payday. Review it as your income or expenses change.' }] : []),
     ...(w && w.outgoing > 0 && w.averageBalance < w.outgoing / w.days * 90 ? [{ title: 'Grow your cash buffer', summary: 'Give your budget more breathing room.', detail: 'A cash buffer can help with essential expenses and surprises. Start with a target that works for you.' }] : []),
-    ...(displayScore.provisional ? [{ title: 'Complete your picture', summary: 'See more than your account activity.', detail: 'Answer the questionnaire to add perception, knowledge and habits to your score. The full score also needs two complete months of transactions.' }] : []),
+    ...(displayScore.provisional ? [{ title: 'Give it time', summary: 'Your full score needs two complete months.', detail: 'Until then the number is a first look from your account activity. It fills in by itself as your transactions come in.' }] : []),
     { title: 'Review your spending', summary: 'Spot patterns in where your money goes.', detail: 'Look through recent outgoings and see if any recurring costs could be reduced.' },
     { title: 'Review one regular cost', summary: 'Small checks can free up money.', detail: 'Look at one bill or subscription and see whether it still suits your needs.' },
     { title: 'Check in regularly', summary: 'Keep your money picture current.', detail: 'Revisit your spending and savings as your circumstances change. These are general ideas, not financial advice.' },
@@ -821,79 +813,79 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
   const seeDetails = (id: string, subject: string) => (
     <button type="button" onClick={() => toggleDetails(id)} aria-expanded={openDetails === id} aria-controls={openDetails === id ? `score-${id}` : undefined}
       aria-label={`${openDetails === id ? 'Hide details' : 'See details'} about ${subject}`}
-      className="rounded-full border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
+      className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
       {openDetails === id ? 'Hide details' : 'See details'} <span aria-hidden="true">{openDetails === id ? '↑' : '↓'}</span>
     </button>
   )
 
   return (
-    <div className="space-y-6 rounded-3xl bg-[#f3faf3] p-4 pb-8 text-emerald-950 sm:p-6">
-      <button onClick={onBack} className="text-sm font-medium text-emerald-800 underline-offset-4 hover:underline">← Back to overview</button>
+    <div className="space-y-6">
+      <button onClick={onBack} className="text-sm font-medium text-muted underline-offset-4 hover:underline">← Back to overview</button>
       <header>
         <h1 className="text-3xl font-bold tracking-tight">Your financial profile</h1>
-        <p className="mt-1 text-sm text-emerald-800">Your financial well-being at a glance.</p>
+        <p className="mt-1 text-sm text-muted">Your financial well-being at a glance.</p>
       </header>
-      <section aria-label="Your financial profile score" className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-7">
+      <section aria-label="Your financial profile score" className="rounded-3xl bg-white p-6 sm:p-7">
         <div className="grid items-center gap-4 sm:grid-cols-[1fr_200px]">
           <div>
-            <p className="text-sm font-semibold text-emerald-700">Your score {displayScore.provisional && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-1 text-xs">Preliminary</span>}</p>
-            <p className="mt-2 text-6xl font-bold tracking-tight text-emerald-900" aria-label={score === null ? 'Score unavailable' : `${score} out of 100${displayScore.provisional ? ', preliminary' : ''}`}>
-              {score ?? '—'} <span aria-hidden="true" className="text-xl font-medium text-emerald-700">/ 100</span>
+            <p className="text-sm font-semibold text-muted">Your score {displayScore.provisional && <span className="ml-2 rounded-full bg-paper px-2 py-1 text-xs">Preliminary</span>}</p>
+            <p className="mt-2 font-display text-6xl font-extrabold tracking-tight" aria-label={score === null ? 'Score unavailable' : `${score} out of 100${displayScore.provisional ? ', preliminary' : ''}`}>
+              {score ?? '—'} <span aria-hidden="true" className="text-xl font-medium text-muted">/ 100</span>
             </p>
-            <p className="mt-3 text-sm font-medium text-emerald-800">
+            <p className="mt-3 text-sm font-medium text-muted">
               {error ? 'Could not load your account data.' : loading ? 'Calculating…' : score === null ? 'Not enough account activity yet.' : displayScore.provisional ? 'A first look from your account activity.' : scoreDescription(score)}
             </p>
             <div className="mt-5 flex flex-wrap items-center gap-2">
-              <button type="button" onClick={onShowWellness} className="rounded-full bg-emerald-800 px-5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
-                {displayScore.provisional ? 'Complete your assessment' : 'View your answers'} ↗
+              <button type="button" onClick={onShowWellness} className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                {displayScore.provisional ? 'Complete your assessment' : 'See how it is built'}
               </button>
               {seeDetails('score', 'the score')}
             </div>
           </div>
-          <div className="mx-auto grid size-44 place-items-center rounded-full bg-emerald-50 sm:size-48">
+          <div className="mx-auto grid size-44 place-items-center rounded-full bg-paper sm:size-48">
             <WellnessApple stage={stage} golden={score === 100 && !displayScore.provisional} className="size-40 sm:size-44" />
           </div>
         </div>
         {openDetails === 'score' && (
-          <div id="score-score" className="mt-5 rounded-2xl bg-emerald-50 p-4 text-sm leading-relaxed text-emerald-900">
-            {displayScore.provisional ? 'This preliminary number uses account activity only (resilience scaled to 100). Complete your answers and two full months of transactions for the four-part score.' : 'The full score combines resilience (35), perception (25), knowledge (20) and behaviors (20).'}{' '}
+          <div id="score-score" className="mt-5 rounded-2xl bg-paper p-4 text-sm leading-relaxed text-ink">
+            {displayScore.provisional ? 'This preliminary number uses resilience only, scaled to 100. The four-part score appears after two complete months of transactions.' : 'The full score combines resilience (35), perception (25), knowledge (20) and behaviors (20).'}{' '}
             This is an illustrative estimate, not a bank index or credit score.
           </div>
         )}
       </section>
 
-      <section aria-labelledby="household-comparison-title" className="rounded-3xl border border-emerald-100 bg-white p-5 sm:p-6">
+      <section aria-labelledby="household-comparison-title" className="rounded-3xl bg-white p-5 sm:p-6">
         <h2 id="household-comparison-title" className="text-xl font-bold">Customers like you… can plan for surprises</h2>
-        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl bg-emerald-50 p-4 sm:gap-5">
-          <strong className="text-3xl font-bold text-emerald-900">1 in 10</strong>
-          <p className="text-sm text-emerald-900">Finnish households said they struggled to make ends meet in 2023.</p>
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl bg-paper p-4 sm:gap-5">
+          <strong className="text-3xl font-bold text-ink">1 in 10</strong>
+          <p className="text-sm text-ink">Finnish households said they struggled to make ends meet in 2023.</p>
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-700">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
           <span>National figure, not a comparison with similar customers.</span>
           <a href="https://www.bofbulletin.fi/article/analysis/2026/rise-in-cost-of-living-and-higher-interest-rates-have-increased-the-pressure-on-many-indebted-households/"
             target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">Bank of Finland ↗</a>
         </div>
       </section>
 
-      <section aria-labelledby="levels-title" className="rounded-3xl border border-emerald-100 bg-white p-5 sm:p-6">
+      <section aria-labelledby="levels-title" className="rounded-3xl bg-white p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="levels-title" className="text-xl font-bold">From recovery to thriving</h2>
           {seeDetails('levels', 'the apple stages')}
         </div>
         <ol className="mt-5 grid grid-cols-5 gap-1 sm:gap-3">
           {levels.map((level, index) => (
-            <li key={level.range} className={`min-w-0 rounded-2xl p-1 text-center sm:p-2 ${stage === index ? 'bg-emerald-100 ring-2 ring-emerald-700' : 'bg-emerald-50'}`}>
+            <li key={level.range} className={`min-w-0 rounded-2xl p-1 text-center sm:p-2 ${stage === index ? 'bg-paper ring-2 ring-accent' : 'bg-paper'}`}>
               <WellnessApple stage={index} className="mx-auto w-full max-w-20" />
-              <p className="text-[10px] font-semibold leading-tight text-emerald-900 sm:text-sm">{level.name}</p>
-              <p className="text-[10px] text-emerald-700 sm:text-xs">{level.range}</p>
+              <p className="text-[10px] font-semibold leading-tight text-ink sm:text-sm">{level.name}</p>
+              <p className="text-[10px] text-muted sm:text-xs">{level.range}</p>
             </li>
           ))}
         </ol>
-        <button type="button" onClick={onWhatIf} className="mt-4 rounded-full bg-emerald-800 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
+        <button type="button" onClick={onWhatIf} className="mt-4 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
           What if scenarios
         </button>
         {openDetails === 'levels' && (
-          <p id="score-levels" className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm leading-relaxed text-emerald-900">
+          <p id="score-levels" className="mt-4 rounded-2xl bg-paper p-4 text-sm leading-relaxed text-ink">
             The apple gradually becomes healthier as the score rises. Ranges are illustrative, not official bank classifications. {displayScore.provisional ? 'The highlighted stage is only a preview based on account activity; your full score may differ.' : score === null ? 'Your stage will appear once there is enough account activity.' : `Your full score places you in the ${levels[stage!].name.toLowerCase()} stage.`}
           </p>
         )}
@@ -904,9 +896,9 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
           <h2 id="tips-title" className="text-xl font-bold">Small steps, big difference</h2>
           <div className="flex shrink-0 gap-2">
             <button type="button" onClick={() => showTip(activeTip - 1)} disabled={activeTip === 0} aria-label="Previous suggestion"
-              className="grid size-9 place-items-center rounded-full border border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:opacity-40">←</button>
+              className="grid size-9 place-items-center rounded-full border border-line bg-white text-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40">←</button>
             <button type="button" onClick={() => showTip(activeTip + 1)} disabled={activeTip === tips.length - 1} aria-label="Next suggestion"
-              className="grid size-9 place-items-center rounded-full border border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:opacity-40">→</button>
+              className="grid size-9 place-items-center rounded-full border border-line bg-white text-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40">→</button>
           </div>
         </div>
         <ul ref={tipsList} aria-label="Financial suggestions; swipe or scroll to explore" tabIndex={0}
@@ -914,15 +906,15 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
             const list = event.currentTarget
             if (list.clientWidth) setActiveTip(Math.max(0, Math.min(tips.length - 1, Math.round(list.scrollLeft / list.clientWidth))))
           }}
-          className="mt-3 flex snap-x snap-mandatory overflow-x-auto rounded-3xl scroll-smooth focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
+          className="mt-3 flex snap-x snap-mandatory overflow-x-auto rounded-3xl scroll-smooth focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
           {tips.map((tip, index) => (
             <li key={tip.title} className="w-full shrink-0 snap-start">
-              <article className="flex min-h-56 flex-col rounded-3xl border border-emerald-100 bg-white p-6 sm:min-h-52">
-                <span className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Step {index + 1} of {tips.length}</span>
+              <article className="flex min-h-56 flex-col rounded-3xl bg-white p-6 sm:min-h-52">
+                <span className="text-xs font-semibold text-accent">Step {index + 1} of {tips.length}</span>
                 <h3 className="mt-4 text-xl font-bold">{tip.title}</h3>
-                <p className="mt-2 text-sm text-emerald-800">{tip.summary}</p>
+                <p className="mt-2 text-sm text-muted">{tip.summary}</p>
                 <div className="mt-auto pt-5">{seeDetails(`tip-${index}`, tip.title)}</div>
-                {openDetails === `tip-${index}` && <p id={`score-tip-${index}`} className="mt-4 border-t border-emerald-100 pt-4 text-sm leading-relaxed text-emerald-900">{tip.detail} General idea, not personalized financial advice.</p>}
+                {openDetails === `tip-${index}` && <p id={`score-tip-${index}`} className="mt-4 border-t border-line pt-4 text-sm leading-relaxed text-ink">{tip.detail} General idea, not personalized financial advice.</p>}
               </article>
             </li>
           ))}
@@ -931,7 +923,7 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
           {tips.map((tip, index) => (
             <button key={tip.title} type="button" onClick={() => showTip(index)} aria-label={`Go to suggestion ${index + 1}: ${tip.title}`}
               aria-current={activeTip === index ? 'step' : undefined}
-              className={`size-3 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 ${activeTip === index ? 'bg-emerald-800' : 'bg-emerald-200 hover:bg-emerald-500'}`} />
+              className={`size-3 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${activeTip === index ? 'bg-accent' : 'bg-line hover:bg-muted'}`} />
           ))}
         </div>
       </section>
@@ -940,10 +932,10 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
         <h2 id="factors-title" className="text-xl font-bold">Your money</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           {factors.map((factor) => (
-            <article key={factor.title} className="rounded-3xl border border-emerald-100 bg-white p-5">
-              <h3 className="text-sm font-semibold text-emerald-800">{factor.title}</h3>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-emerald-950">{factor.measure}</p>
-              <p className="mt-1 text-sm text-emerald-800">{factor.note}</p>
+            <article key={factor.title} className="rounded-3xl bg-white p-5">
+              <h3 className="text-sm font-semibold text-muted">{factor.title}</h3>
+              <p className="mt-2 font-display text-3xl font-extrabold tracking-tight">{factor.measure}</p>
+              <p className="mt-1 text-sm text-muted">{factor.note}</p>
             </article>
           ))}
         </div>
@@ -952,16 +944,13 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
   )
 }
 
-function FinancialWellness({ data: w, answers, onAnswers }: {
+function FinancialWellness({ data: w, answers }: {
   data: Wellness
   answers: WellnessAnswers
-  onAnswers: (answers: WellnessAnswers) => void
 }) {
   const [openInfo, setOpenInfo] = useState<string | null>(null)
-  const scores = wellnessScores(w, answers)
+  const dimensions = wellnessBreakdown(w, answers)
   const displayScore = visibleWellnessScore(w, answers)
-  const update = (key: keyof WellnessAnswers, value: number | boolean | null) =>
-    onAnswers({ ...answers, [key]: value })
   const figures: [string, string, string][] = [
     ['Money in', eur(w.incoming), 'Total deposits during the period.'],
     ['Money out', eur(w.outgoing), 'Total withdrawals and payments, shown as a positive amount.'],
@@ -991,8 +980,7 @@ function FinancialWellness({ data: w, answers, onAnswers }: {
         </div>
         {openInfo === 'method' && (
           <p id="wellness-info-method" className="mt-2 text-sm text-muted">
-            Illustrative model, not the bank's official index. Based on all available transactions and
-            your answers. Each account balance is tracked from its first recorded transaction and
+            Illustrative model, not the bank's official index. Based on all available transactions. Each account balance is tracked from its first recorded transaction and
             carried forward on days without activity. Debts outside these accounts, insurance and
             investments are not available. This is not a credit assessment or a forecast.
           </p>
@@ -1001,70 +989,45 @@ function FinancialWellness({ data: w, answers, onAnswers }: {
           {date(w.from)} – {date(w.to)} · {w.accounts} {w.accounts === 1 ? 'account' : 'accounts'} · {w.days} days
         </p>
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="min-h-40 rounded-lg border border-line bg-white p-5">
+          <div className="rounded-lg bg-white p-6 sm:col-span-2">
             <p className="flex items-center gap-2 text-sm text-muted">
               Your financial profile {infoButton('impact', 'the financial score')}
             </p>
-            <p className="mt-4 text-5xl font-semibold tracking-tight">
+            <p className="mt-3 font-display text-6xl font-extrabold tracking-tight">
               {displayScore.value ?? '—'} <span className="text-lg font-normal text-muted">/ 100</span>
             </p>
-            {displayScore.provisional && <p className="mt-2 text-sm text-muted">Preliminary · based on account activity only. The full score also needs your answers and two complete months of transactions.</p>}
+            {displayScore.provisional && <p className="mt-2 text-sm text-muted">Preliminary · based on account activity only. The full score needs two complete months of transactions.</p>}
             {openInfo === 'impact' && (
               <p className="mt-3 text-sm text-muted">
-                The preliminary score scales resilience (up to 35 points) to 100; it does not treat missing answers as zero.
-                The full score uses resilience 35, perception 25, knowledge 20 and behaviors 20, and needs two complete months of transactions. Not a credit score.
+                The preliminary score scales resilience (up to 35 points) to 100; it does not treat missing data as zero.
+                The full score uses resilience 35, perception 25, knowledge 20 and behaviors 20, all worked out from your transactions, and needs two complete months of them. Not a credit score.
               </p>
             )}
           </div>
-          <div className="min-h-40 rounded-lg border border-line bg-white p-5">
-            <h2 className="text-sm text-muted">Four dimensions</h2>
-            <ul className="mt-3 space-y-1 text-sm">
-              {([['Resilience', scores.resilience, 35], ['Perception', scores.perception, 25],
-                ['Knowledge', scores.knowledge, 20], ['Behaviors', scores.behaviors, 20]] as const).map(([name, value, max]) => (
-                <li key={name} className="flex justify-between gap-3"><span>{name}</span><span>{value ?? '—'} / {max}</span></li>
+          <div className="rounded-lg bg-white p-6 sm:col-span-2">
+            <h2 className="text-lg font-bold">How your score is built</h2>
+            <p className="mt-1 text-sm text-muted">All four parts are worked out from your account, the same way every time.</p>
+            <ul className="mt-4 space-y-5">
+              {dimensions.map((d) => (
+                <li key={d.name}>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="font-semibold">{d.name}</span>
+                    <span className="font-display text-xl font-extrabold tracking-tight">
+                      {d.score ?? '—'} <span className="font-sans text-sm font-normal tracking-normal text-muted">/ {d.max}</span>
+                    </span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-line" aria-hidden="true">
+                    <div className="h-full rounded-full bg-accent" style={{ width: `${((d.score ?? 0) / d.max) * 100}%` }} />
+                  </div>
+                  <ul className="mt-2 space-y-0.5 text-sm text-muted">
+                    {d.lines.map((line) => <li key={line}>{line}</li>)}
+                  </ul>
+                </li>
               ))}
             </ul>
           </div>
         </div>
       </div>
-      <Card>
-        <div className="space-y-5 p-5">
-          <h2 className="font-medium">Your perspective and habits</h2>
-          <p className="text-sm text-muted">Answers are stored only in this browser for this customer ID. Leave a question unanswered if you don't know.</p>
-          {([
-            ['control', 'How much control do you feel you have over your finances?'],
-            ['worry', 'How often do financial worries cause you stress?'],
-            ['confidence', 'How confident are you about achieving your financial goals?'],
-          ] as const).map(([key, question]) => (
-            <label key={key} className="block text-sm">{question}
-              <select className="mt-1 block w-full rounded border border-line bg-white p-2" value={answers[key] ?? ''}
-                onChange={(e) => update(key, e.target.value === '' ? null : Number(e.target.value))}>
-                <option value="">Not answered</option>
-                {(key === 'worry'
-                  ? ['Never', 'Rarely', 'Sometimes', 'Often', 'Always']
-                  : ['Not at all', 'A little', 'Somewhat', 'Mostly', 'Completely']).map((text, i) => (
-                  <option key={i} value={i}>{i} — {text}</option>
-                ))}
-              </select>
-            </label>
-          ))}
-          {([
-            ['inflation', 'If prices rise faster than your savings interest, can you buy less with your savings?'],
-            ['compoundInterest', 'Does compound interest earn interest on past interest?'],
-            ['diversification', 'Does spreading investments across different assets usually reduce concentration risk?'],
-            ['budget', 'Do you regularly track your spending against a budget?'],
-            ['plan', 'Do you have a medium- or long-term financial plan?'],
-          ] as const).map(([key, question]) => (
-            <label key={key} className="block text-sm">{question}
-              <select className="mt-1 block w-full rounded border border-line bg-white p-2" value={answers[key] === null ? '' : String(answers[key])}
-                onChange={(e) => update(key, e.target.value === '' ? null : e.target.value === 'true')}>
-                <option value="">Not answered</option><option value="true">Yes</option><option value="false">No</option>
-              </select>
-            </label>
-          ))}
-          <p className="text-xs text-muted">Resilience: savings rate (15), cash buffer (15), days without overdraft (5). Behaviors: months with positive net flow (10), budgeting (5), planning (5). At least two complete calendar months of transactions are needed for the full score. Until then, the preliminary score uses account activity only; missing data is never scored as zero.</p>
-        </div>
-      </Card>
       <Card>
         <dl className="grid gap-x-6 px-5 sm:grid-cols-2">
           {figures.map(([name, value, description], index) => {
@@ -1101,11 +1064,9 @@ function FinancialWellness({ data: w, answers, onAnswers }: {
 
 function TxRow({
   tx,
-  tag,
   showDate,
 }: {
   tx: Transaction
-  tag?: Tag
   showDate?: boolean
 }) {
   const type = label(tx.transaction_type)
@@ -1116,20 +1077,7 @@ function TxRow({
   return (
     <li className="flex items-center justify-between gap-4 py-3">
       <div className="min-w-0">
-        <p className="flex items-center gap-2">
-          <span className="truncate">{title}</span>
-          {tag && (
-            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-              tag === 'essential'
-                ? 'bg-slate-100 text-slate-700'
-                : tag === 'flexible'
-                  ? 'bg-amber-100 text-amber-900'
-                  : 'bg-credit/10 text-credit'
-            }`}>
-              {tag === 'essential' ? 'Essential' : tag === 'flexible' ? 'Flexible' : 'Money set aside'}
-            </span>
-          )}
-        </p>
+        <p className="truncate">{title}</p>
         {detail && <p className="truncate text-sm text-muted">{detail}</p>}
       </div>
       <p className={`shrink-0 font-medium ${tx.tx_amount_eur > 0 ? 'text-credit' : ''}`}>
@@ -1141,13 +1089,11 @@ function TxRow({
 
 function Transactions({
   txs,
-  tagOf,
   hasMore,
   loading,
   onMore,
 }: {
   txs: Transaction[]
-  tagOf: (tx: Transaction) => Tag
   hasMore: boolean
   loading: boolean
   onMore: () => void
@@ -1171,7 +1117,7 @@ function Transactions({
             </h3>
             <ul className="divide-y divide-line border-b border-line px-5 last:border-b-0">
               {rows.map((tx, i) => (
-                <TxRow key={i} tx={tx} tag={tagOf(tx)} />
+                <TxRow key={i} tx={tx} />
               ))}
             </ul>
           </div>
@@ -1181,7 +1127,7 @@ function Transactions({
         <button
           onClick={onMore}
           disabled={loading}
-          className="mt-4 w-full rounded-md border border-line bg-white py-2.5 text-sm font-medium disabled:opacity-50"
+          className="mt-4 w-full rounded-full bg-white py-3 text-sm font-semibold hover:bg-line disabled:opacity-50"
         >
           Show more
         </button>

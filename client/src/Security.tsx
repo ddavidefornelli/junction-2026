@@ -130,7 +130,7 @@ export function SecureNote({ children }: { children: ReactNode }) {
 // Shown while the account is being fetched: the data travelling, under lock.
 export function SecureLoading({ text = 'Fetching your account' }: { text?: string }) {
   return (
-    <div role="status" className="rounded-lg border border-line bg-white p-5">
+    <div role="status" className="rounded-lg bg-white p-5">
       <div className="flex items-center gap-2 text-sm">
         <LockIcon className="size-4 text-credit" />
         <span>{text}{linkEncrypted() ? ' over an encrypted connection' : ''}…</span>
@@ -222,7 +222,7 @@ export function ProtectedBadge() {
           onClose={() => setOpen(false)}
           onClick={(e) => e.target === dialog.current && dialog.current?.close()}
           aria-labelledby="protected-title"
-          className="m-auto w-[calc(100%-2rem)] max-w-md rounded-lg border border-line bg-white p-0 text-ink shadow-xl backdrop:bg-ink/30 backdrop:backdrop-blur-sm"
+          className="m-auto w-[calc(100%-2rem)] max-w-md rounded-lg bg-white p-0 text-ink shadow-xl backdrop:bg-ink/30 backdrop:backdrop-blur-sm"
         >
           <div className="max-h-[85vh] overflow-y-auto p-5">
             <div className="flex items-start justify-between gap-3">

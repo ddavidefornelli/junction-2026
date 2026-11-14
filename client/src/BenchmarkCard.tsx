@@ -16,7 +16,7 @@ export function BenchmarkCard({ data }: { data: Benchmark }) {
   const who = data.group === 'all' ? 'people in Finland' : `Finns aged ${data.group}`
 
   return (
-    <section aria-labelledby="benchmark-title" className="rounded-lg border border-line bg-white">
+    <section aria-labelledby="benchmark-title" className="rounded-lg bg-white">
       <div className="p-5">
         <h2 id="benchmark-title" className="font-medium">How you compare</h2>
         <p className="mt-1 text-sm text-muted">

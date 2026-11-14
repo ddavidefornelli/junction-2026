@@ -54,9 +54,9 @@ export default async function handler(req: Request, res: Response) {
 
     try {
       const { chatReply } = await import('../chat.js')
-      const { context, messages, ledger, spoken } = (req.body ?? {}) as { context?: unknown; messages?: unknown; ledger?: unknown; spoken?: unknown }
+      const { context, messages, ledger, spoken, future } = (req.body ?? {}) as { context?: unknown; messages?: unknown; ledger?: unknown; spoken?: unknown; future?: unknown }
       const config = { apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL }
-      const reply = await chatReply(config, context, messages, ledger, spoken === true)
+      const reply = await chatReply(config, context, messages, ledger, spoken === true, future === true)
       res.setHeader('Content-Type', 'text/plain; charset=utf-8')
       try {
         for await (const text of reply) res.write(text)
@@ -91,13 +91,14 @@ export default async function handler(req: Request, res: Response) {
 
     try {
       const { speech } = await import('../tts.js')
-      const { text } = (req.body ?? {}) as { text?: unknown }
+      const { text, voice } = (req.body ?? {}) as { text?: unknown; voice?: unknown }
       const config = {
         apiKey: process.env.ELEVENLABS_API_KEY,
         voiceId: process.env.ELEVENLABS_VOICE_ID,
         model: process.env.ELEVENLABS_MODEL,
+        futureVoiceId: process.env.ELEVENLABS_FUTURE_VOICE_ID,
       }
-      const audio = await speech(config, text)
+      const audio = await speech(config, text, voice === 'future')
       res.setHeader('Content-Type', 'audio/mpeg')
       res.setHeader('Cache-Control', 'no-store')
       return res.end(audio)

@@ -15,7 +15,7 @@ const label = (s: string) => s.replace(/^(\d{4})-(\d{2})$/, (_, y, m) => `${Numb
 // `onPick`, when given, makes each bar row or point clickable: it gets that row's label.
 export function ChatChart({ chart, onPick }: { chart: Chart; onPick?: (label: string) => void }) {
   return (
-    <figure className="rounded-lg border border-line bg-white p-3">
+    <figure className="rounded-lg bg-white p-3">
       <figcaption className="text-sm font-medium">{chart.title}</figcaption>
       {chart.series.length > 1 && (
         <ul className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">

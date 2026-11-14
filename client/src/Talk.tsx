@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { WalterAvatar } from './WalterAvatar'
 import { listen, microphoneSupported, releaseMicrophone, transcribe, type Recording } from './listen'
 import { stopSpeaking, useVoice } from './voice'
@@ -8,8 +8,14 @@ type Phase = 'off' | 'listening' | 'transcribing' | 'answering'
 // A spoken conversation with Walter: the customer talks, Walter answers out
 // loud, then listens again, until the customer ends it. `ask` sends what was
 // said to Walter and resolves with his reply once he has finished saying it
-// (null when he could not answer).
-export function Talk({ ask, disabled }: { ask: (text: string) => Promise<string | null>; disabled: boolean }) {
+// (null when he could not answer). `who` and `avatar` put someone else on the
+// line instead of Walter (the customer's future self, FutureCall.tsx).
+export function Talk({ ask, disabled, who = 'Walter', avatar }: {
+  ask: (text: string) => Promise<string | null>
+  disabled: boolean
+  who?: string
+  avatar?: ReactNode
+}) {
   const voice = useVoice()
   const [phase, setPhase] = useState<Phase>('off')
   const [level, setLevel] = useState(0)
@@ -65,7 +71,7 @@ export function Talk({ ask, disabled }: { ask: (text: string) => Promise<string 
       if (!active.current) return
       const denied = e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError')
       console.error('[talk] Turn failed', e)
-      end(denied ? 'Walter needs your microphone. Allow it in your browser and try again.' : 'Something went wrong while listening. Try again.')
+      end(denied ? `${who} needs your microphone. Allow it in your browser and try again.` : 'Something went wrong while listening. Try again.')
     }
   }
 
@@ -81,7 +87,7 @@ export function Talk({ ask, disabled }: { ask: (text: string) => Promise<string 
   }
 
   if (!microphoneSupported())
-    return <p className="text-sm text-muted">This browser can’t record audio. Switch to Chat to type to Walter instead.</p>
+    return <p className="text-sm text-muted">This browser can’t record audio.{who === 'Walter' && ' Switch to Chat to type to Walter instead.'}</p>
 
   const speaking = phase === 'answering' && (voice.speaking || voice.loading)
   const status =
@@ -92,12 +98,12 @@ export function Talk({ ask, disabled }: { ask: (text: string) => Promise<string 
         : speaking
           ? voice.loading
             ? 'Getting ready to speak…'
-            : 'Walter is speaking… tap to interrupt'
+            : `${who} is speaking… tap to interrupt`
           : phase === 'answering'
             ? 'Thinking…'
             : disabled
-              ? 'Loading your data…'
-              : 'Tap the microphone and ask Walter anything'
+              ? who === 'Walter' ? 'Loading your data…' : voice.speaking ? `${who} is speaking…` : 'Connecting…'
+              : who === 'Walter' ? 'Tap the microphone and ask Walter anything' : 'Tap the microphone and talk'
   const canPress = phase === 'off' ? !disabled : phase === 'listening' || speaking
 
   return (
@@ -110,7 +116,7 @@ export function Talk({ ask, disabled }: { ask: (text: string) => Promise<string 
             style={{ transform: `scale(${1 + level * 0.45})` }}
           />
         )}
-        <WalterAvatar className="relative size-20" talking={voice.speaking} />
+        {avatar ?? <WalterAvatar className="relative size-20" talking={voice.speaking} />}
       </div>
       <p className="min-h-5 text-center text-sm text-muted" aria-live="polite">
         {note ?? status}
@@ -119,7 +125,7 @@ export function Talk({ ask, disabled }: { ask: (text: string) => Promise<string 
         <button
           onClick={press}
           disabled={!canPress}
-          aria-label={phase === 'off' ? 'Start talking to Walter' : phase === 'listening' ? 'Done talking' : 'Interrupt Walter'}
+          aria-label={phase === 'off' ? `Start talking to ${who}` : phase === 'listening' ? 'Done talking' : `Interrupt ${who}`}
           className={`flex size-14 items-center justify-center rounded-full text-white shadow-md transition disabled:opacity-40 ${phase === 'listening' ? 'bg-red-600 hover:bg-red-700' : 'bg-ink hover:bg-ink/90'}`}
         >
           {phase === 'listening' ? <StopIcon /> : speaking ? <HandIcon /> : <MicIcon />}

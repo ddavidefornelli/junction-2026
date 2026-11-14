@@ -15,7 +15,7 @@ export function BasketsCard({ data }: { data: Baskets }) {
   const { irregular, everyday } = data.baskets
 
   return (
-    <section aria-labelledby="baskets-title" className="rounded-lg border border-line bg-white">
+    <section aria-labelledby="baskets-title" className="rounded-lg bg-white">
       <div className="p-5">
         <h2 id="baskets-title" className="font-medium">Where your money goes</h2>
         <p className="mt-1 text-sm text-muted">Each month you spend about {eur(data.spending)}.</p>

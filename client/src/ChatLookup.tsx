@@ -14,7 +14,7 @@ const period = (from: string, to: string) =>
 export function ChatLookup({ lookup }: { lookup: Lookup }) {
   const { title, from, to, count, total, rows, more } = lookup
   return (
-    <details className="group max-w-[90%] rounded-lg border border-line bg-white text-xs">
+    <details className="group max-w-[90%] rounded-lg bg-white text-xs">
       <summary className="flex cursor-pointer list-none items-baseline gap-x-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
         <span aria-hidden="true" className="text-muted transition-transform group-open:rotate-90">›</span>
         <span className="min-w-0 flex-1">

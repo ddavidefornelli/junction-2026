@@ -103,7 +103,8 @@ export function stopSpeaking() {
 
 // Walter reads `reply` aloud, cutting off whatever he was saying before.
 // Resolves once he has finished, been stopped, or could not speak.
-export async function speak(reply: string): Promise<void> {
+// `voice`: 'future' for the customer's future self instead of Walter.
+export async function speak(reply: string, voice?: 'future'): Promise<void> {
   const text = speakableText(reply)
   stopSpeaking()
   if (!text) return
@@ -114,7 +115,7 @@ export async function speak(reply: string): Promise<void> {
     const res = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, voice }),
       signal: controller.signal,
     })
     if (!res.ok) {

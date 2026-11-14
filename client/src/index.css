@@ -1,11 +1,21 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #0a2540;
-  --color-line: #e3e6ea;
-  --color-muted: #66727f;
-  --color-paper: #f6f7f8;
+  /* Pankki: midnight ink, one vivid cobalt, flat white cards on a cool grey page. */
+  --color-ink: #0c1030;
+  --color-accent: #2b3fff;
+  --color-line: #e2e4ec;
+  --color-muted: #5f667a;
+  --color-paper: #f1f2f6;
   --color-credit: #0b7a4b;
+
+  /* Text in Schibsted Grotesk; headings and big figures in Bricolage Grotesque. */
+  --font-sans: "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Schibsted Grotesk", ui-sans-serif, system-ui, sans-serif;
+
+  /* Cards are generously rounded; buttons are pills (rounded-full in the markup). */
+  --radius-lg: 1.5rem;
+  --radius-md: 0.875rem;
 
   --animate-fade-up: fade-up 0.6s ease-out both;
   @keyframes fade-up {
@@ -90,7 +100,15 @@
   }
 }
 
+/* The apple in a future (src/FutureCall.tsx) ripens or bruises as the year changes. */
+.apple-morph * {
+  transition: fill 0.4s ease, opacity 0.4s ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .apple-morph * {
+    transition: none;
+  }
   .animate-fade-up,
   .flow-line,
   .seal-pulse,
@@ -104,8 +122,19 @@
   }
 }
 
+@layer base {
+  h1,
+  h2 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
 body {
   background: var(--color-paper);
   color: var(--color-ink);
-  font-variant-numeric: tabular-nums;
 }

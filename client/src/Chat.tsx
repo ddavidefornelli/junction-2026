@@ -7,7 +7,7 @@ import { SecureNote } from './Security'
 import { Talk } from './Talk'
 import { speak, speakableText, useVoice } from './voice'
 
-const BUBBLE = 'w-fit max-w-[90%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm'
+const BUBBLE = 'w-fit max-w-[90%] whitespace-pre-wrap rounded-2xl px-4 py-2 text-sm'
 
 // The question asked when a bar or a point of a chart is clicked.
 const followUp = (type: Chart['type'], label: string) =>
@@ -219,12 +219,12 @@ export function Chat({
             maxLength={2000}
             aria-label="Chat message"
             placeholder={context === null ? 'Loading your data…' : 'Ask a question…'}
-            className="min-w-0 flex-1 rounded-md border border-line bg-white px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-ink"
+            className="min-w-0 flex-1 rounded-full border border-line bg-white px-4 py-2 text-sm outline-none placeholder:text-muted focus:border-ink"
           />
           <button
             disabled={busy || context === null || !draft.trim()}
             aria-label="Send message"
-            className="rounded-md bg-ink px-3 text-sm text-white disabled:opacity-50"
+            className="rounded-full bg-accent px-4 text-sm font-semibold text-white hover:bg-accent/90 disabled:opacity-50"
           >
             Send
           </button>

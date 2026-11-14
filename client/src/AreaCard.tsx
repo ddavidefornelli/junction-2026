@@ -18,7 +18,7 @@ export function AreaCard({ data }: { data: AreaView }) {
   ]
 
   return (
-    <section aria-labelledby="area-title" className="rounded-lg border border-line bg-white">
+    <section aria-labelledby="area-title" className="rounded-lg bg-white">
       <div className="p-5">
         <h2 id="area-title" className="font-medium">Your area</h2>
         <p className="mt-1 text-sm text-muted">

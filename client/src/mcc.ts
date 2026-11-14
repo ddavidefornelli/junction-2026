@@ -121,6 +121,10 @@ export type Suggestion = {
   text: string
   source: string | null
   saving: number | null // euros a month; null when no source gives a figure
+  amount: number // euros a month spent at this kind of place
+  many: string // the kind of place, as in "restaurants"
+  advice: string // the cheaper way, on its own
+  mcc: string // the code of this kind of place
 }
 
 const WINDOW_MONTHS = 3 // recent enough to describe current habits
@@ -149,6 +153,9 @@ export function suggestions(all: Transaction[]): Suggestion[] {
         source,
         saving: saves === null ? null : amount * part * saves,
         amount,
+        many: kind.many,
+        mcc: Object.keys(KINDS).find((code) => KINDS[code] === kind)!,
+        advice,
       }
     })
     .filter((s) => (s.saving === null ? s.amount >= MIN_SPEND : s.saving >= MIN_SAVING))

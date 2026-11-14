@@ -349,6 +349,7 @@ export async function sendChat(
   messages: ChatMessage[],
   onText: (reply: string) => void,
   spoken = false,
+  future = false, // the customer's future self answers (see future.ts)
 ): Promise<string> {
   const res = await fetch('/api/chat', {
     method: 'POST',
@@ -357,6 +358,7 @@ export async function sendChat(
       context,
       ledger,
       spoken,
+      future,
       messages: messages.slice(-SENT_MESSAGES).map((m) => (m.role === 'assistant' ? { ...m, content: withoutLookups(m.content) } : m)),
     }),
   })

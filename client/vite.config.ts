@@ -13,10 +13,10 @@ const TABLES = ['customers', 'transactions', 'mortgage_applications']
 // API for the client:
 //   GET  /api/<table>?<postgrest query>   read-only Supabase access
 //   POST /api/classify {purchases}       essential / flexible / saving labels from Laya (laya.ts)
-//   POST /api/chat {context, messages, ledger, spoken}  the assistant's reply from OpenAI, streamed as plain text (chat.ts)
+//   POST /api/chat {context, messages, ledger, spoken, future}  the assistant's reply (or the customer's future self's) from OpenAI, streamed as plain text (chat.ts)
 //   POST /api/mortgage-steps {context}    AI-written next steps towards the mortgage, as JSON (chat.ts)
 //   POST /api/scenarios {context}         Walter's personalised what-if questions, as JSON (scenarios.ts)
-//   POST /api/tts {text}                  Walter's voice from ElevenLabs, as MP3 audio (tts.ts)
+//   POST /api/tts {text, voice}           Walter's voice (or the future self's) from ElevenLabs, as MP3 audio (tts.ts)
 //   POST /api/stt {audio, mimeType}       what the customer said, from ElevenLabs Scribe, as {text} (stt.ts)
 // The dev server calls Supabase, Laya, OpenAI and ElevenLabs itself with keys from server/.env
 // (or client/.env for Laya); the keys never reach the browser.
@@ -34,14 +34,14 @@ function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig, t
             const body = JSON.parse(raw)
             if (pathname === '/mortgage-steps') return res.end(JSON.stringify(await mortgageSteps(chat, body.context)))
             if (pathname === '/tts') {
-              const audio = await speech(tts, body.text)
+              const audio = await speech(tts, body.text, body.voice === 'future')
               res.setHeader('Content-Type', 'audio/mpeg')
               return res.end(audio)
             }
             if (pathname === '/stt') return res.end(JSON.stringify(await transcribe(tts, body.audio, body.mimeType)))
             if (pathname === '/scenarios') return res.end(JSON.stringify(await whatIfScenarios(chat, body.context)))
             if (pathname === '/chat') {
-              const reply = await chatReply(chat, body.context, body.messages, body.ledger, body.spoken === true)
+              const reply = await chatReply(chat, body.context, body.messages, body.ledger, body.spoken === true, body.future === true)
               res.setHeader('Content-Type', 'text/plain; charset=utf-8')
               try {
                 for await (const text of reply) res.write(text)
@@ -95,7 +95,7 @@ export default defineConfig(({ mode }) => {
         env.SUPABASE_SERVICE_ROLE_KEY,
         { baseUrl: env.LAYA_BASE_URL || localLaya.LAYA_BASE_URL, apiKey: env.LAYA_API_KEY || localLaya.LAYA_API_KEY },
         { apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL },
-        { apiKey: eleven.ELEVENLABS_API_KEY, voiceId: eleven.ELEVENLABS_VOICE_ID, model: eleven.ELEVENLABS_MODEL },
+        { apiKey: eleven.ELEVENLABS_API_KEY, voiceId: eleven.ELEVENLABS_VOICE_ID, model: eleven.ELEVENLABS_MODEL, futureVoiceId: eleven.ELEVENLABS_FUTURE_VOICE_ID },
       ),
     ],
   }

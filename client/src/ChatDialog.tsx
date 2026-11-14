@@ -22,7 +22,7 @@ export function ChatDialog({ onClose, children }: { onClose: () => void; childre
       onClose={onClose}
       onClick={(e) => e.target === dialog.current && onClose()}
       aria-labelledby="chat-dialog-title"
-      className="m-auto w-[calc(100%-2rem)] max-w-xl rounded-lg border border-line bg-white p-0 text-ink shadow-xl backdrop:bg-ink/30 backdrop:backdrop-blur-sm"
+      className="m-auto w-[calc(100%-2rem)] max-w-xl rounded-lg bg-white p-0 text-ink shadow-xl backdrop:bg-ink/30 backdrop:backdrop-blur-sm"
     >
       <div className="flex max-h-[85vh] flex-col p-5">
         <div className="mb-4 flex items-center gap-3 border-b border-line pb-3">
@@ -35,14 +35,14 @@ export function ChatDialog({ onClose, children }: { onClose: () => void; childre
               {voice.loading ? 'Getting ready to speak…' : voice.speaking ? 'Speaking…' : 'Your Pankki assistant'}
             </p>
           </div>
-          <div role="radiogroup" aria-label="How to talk with Walter" className="flex rounded-md border border-line p-0.5 text-xs">
+          <div role="radiogroup" aria-label="How to talk with Walter" className="flex rounded-full bg-paper p-1 text-xs">
             {(['text', 'talk'] as Mode[]).map((m) => (
               <button
                 key={m}
                 role="radio"
                 aria-checked={voice.mode === m}
                 onClick={() => setMode(m)}
-                className={`rounded px-2.5 py-1 ${voice.mode === m ? 'bg-ink text-white' : 'text-muted hover:text-ink'}`}
+                className={`rounded-full px-3 py-1 ${voice.mode === m ? 'bg-ink font-semibold text-white' : 'text-muted hover:text-ink'}`}
               >
                 {m === 'text' ? 'Chat' : 'Talk'}
               </button>
@@ -51,7 +51,7 @@ export function ChatDialog({ onClose, children }: { onClose: () => void; childre
           {voice.mode === 'text' && voice.speaking && (
             <button
               onClick={stopSpeaking}
-              className="rounded-md border border-line px-2 py-1 text-xs text-muted hover:border-ink hover:text-ink"
+              className="rounded-full bg-paper px-3 py-1.5 text-xs text-muted hover:text-ink"
             >
               Stop
             </button>
@@ -62,7 +62,7 @@ export function ChatDialog({ onClose, children }: { onClose: () => void; childre
               aria-pressed={voice.enabled}
               aria-label={voice.enabled ? 'Turn off Walter’s voice' : 'Turn on Walter’s voice'}
               title={voice.enabled ? 'Voice on' : 'Voice off'}
-              className={`flex size-8 items-center justify-center rounded-md ${voice.enabled ? 'bg-ink text-white' : 'text-muted hover:text-ink'}`}
+              className={`flex size-8 items-center justify-center rounded-full ${voice.enabled ? 'bg-ink text-white' : 'text-muted hover:text-ink'}`}
             >
               <SpeakerIcon on={voice.enabled} />
             </button>
@@ -70,7 +70,7 @@ export function ChatDialog({ onClose, children }: { onClose: () => void; childre
           <button
             onClick={() => dialog.current?.close()}
             aria-label="Close chat"
-            className="rounded-md px-2 py-1 text-lg leading-none text-muted hover:text-ink"
+            className="flex size-8 items-center justify-center rounded-full text-lg leading-none text-muted hover:bg-paper hover:text-ink"
           >
             ×
           </button>

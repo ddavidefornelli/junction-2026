@@ -5,6 +5,8 @@ import { ElevenLabsClient, ElevenLabsError } from '@elevenlabs/elevenlabs-js'
 export type TtsConfig = {
   apiKey?: string
   voiceId?: string
+  // The voice of the customer's future self (src/FutureCall.tsx). Default: FUTURE_VOICE.
+  futureVoiceId?: string
   model?: string
 }
 
@@ -18,19 +20,21 @@ export class TtsError extends Error {
 
 // "George": a warm, narrative male voice from ElevenLabs' premade library.
 const DEFAULT_VOICE = 'JBFqnCBsd6RMkjVDRZzb'
+// "River": a calm, neutral premade voice, so the future self is clearly not Walter.
+const FUTURE_VOICE = 'SAz9YHcvj6GT2YYXdXww'
 // Flash is the low-latency model, so Walter starts talking quickly in the chat.
 const DEFAULT_MODEL = 'eleven_flash_v2_5'
 export const MAX_TTS_CHARS = 2500
 
-// MP3 audio of Walter saying `text`.
-export async function speech(config: TtsConfig, text: unknown): Promise<Uint8Array> {
+// MP3 audio of Walter saying `text`, or of the customer's future self when `future`.
+export async function speech(config: TtsConfig, text: unknown, future = false): Promise<Uint8Array> {
   if (!config.apiKey) throw new TtsError(503, 'Set ELEVENLABS_API_KEY in .env.local')
   if (typeof text !== 'string' || !text.trim()) throw new TtsError(400, 'Invalid text')
   if (text.length > MAX_TTS_CHARS) throw new TtsError(413, 'Text too long')
 
   const client = new ElevenLabsClient({ apiKey: config.apiKey })
   try {
-    const audio = await client.textToSpeech.convert(config.voiceId || DEFAULT_VOICE, {
+    const audio = await client.textToSpeech.convert(future ? config.futureVoiceId || FUTURE_VOICE : config.voiceId || DEFAULT_VOICE, {
       text: text.trim(),
       modelId: config.model || DEFAULT_MODEL,
       outputFormat: 'mp3_44100_128',
