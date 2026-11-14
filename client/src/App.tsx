@@ -164,9 +164,12 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center px-4">
-      <form onSubmit={submit} className="w-full max-w-xs">
-        <h1 className="mb-8 text-5xl font-extrabold tracking-tight">White</h1>
+    <main className="flex min-h-dvh items-center justify-center px-5 py-[max(1.5rem,env(safe-area-inset-top))]">
+      <form onSubmit={submit} className="w-full max-w-sm">
+        <h1 className="mb-8 flex items-center gap-3 text-5xl font-extrabold tracking-tight">
+          <img src="/logo.svg" alt="" className="size-12" />
+          White
+        </h1>
         {loggedOut && (
           <p role="status" className="mb-5 rounded-md border border-credit/30 bg-credit/5 px-3 py-2 text-sm text-credit">
             You are logged out. Your session was cleared from this tab.
@@ -181,7 +184,7 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
             value={customerIds.includes(id.trim().toUpperCase()) ? id.trim().toUpperCase() : ''}
             onChange={(e) => setId(e.target.value)}
             disabled={loadingCustomerIds || customerIds.length === 0}
-            className="w-full rounded-md border border-line bg-white px-3 py-2.5 outline-none focus:border-ink disabled:bg-paper disabled:text-muted"
+            className="min-h-12 w-full rounded-md border border-line bg-white px-3 py-2.5 outline-none focus:border-ink disabled:bg-paper disabled:text-muted"
           >
             <option value="">
               {loadingCustomerIds ? 'Loading customer IDs…' : customerIds.length ? 'Select a customer ID' : 'No IDs loaded'}
@@ -195,7 +198,7 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
               type="button"
               onClick={loadMoreCustomerIds}
               disabled={loadingMoreCustomerIds}
-              className="mt-2 text-sm underline underline-offset-4 disabled:opacity-50"
+              className="tap mt-2 text-sm underline underline-offset-4 disabled:opacity-50"
             >
               {loadingMoreCustomerIds ? 'Loading…' : `Load next 100 (${customerIds.length} loaded)`}
             </button>
@@ -209,14 +212,19 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
           id="customer-id"
           value={id}
           onChange={(e) => setId(e.target.value)}
-          autoFocus
+          // On a phone, focusing at once would throw the keyboard over the list above.
+          autoFocus={!window.matchMedia?.('(pointer: coarse)').matches}
           autoComplete="username"
-          className="w-full rounded-md border border-line bg-white px-3 py-2.5 uppercase outline-none focus:border-ink"
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="go"
+          className="min-h-12 w-full rounded-md border border-line bg-white px-3 py-2.5 uppercase outline-none focus:border-ink"
         />
         {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
         <button
           disabled={busy}
-          className="mt-4 w-full rounded-full bg-accent py-3 font-semibold text-white hover:bg-accent/90 disabled:opacity-50"
+          className="mt-4 min-h-13 w-full rounded-full bg-accent py-3 font-semibold text-white hover:bg-accent/90 disabled:opacity-50"
         >
           {busy ? 'Checking…' : 'Log in'}
         </button>
@@ -235,6 +243,11 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
 type View = 'overview' | 'transactions' | 'wellness' | 'score-details' | 'loan'
 function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => void }) {
   const [view, setView] = useState<View>('overview')
+  // A new page starts at its top, not wherever the last one was scrolled to.
+  const go = (next: View) => {
+    setView(next)
+    window.scrollTo(0, 0)
+  }
   const [txs, setTxs] = useState<Transaction[] | null>(null)
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -394,12 +407,15 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   ]
 
   return (
-    <div className="mx-auto min-h-dvh max-w-2xl px-4 pb-28" data-mode={status.mode} style={{ '--color-accent': status.accent } as CSSProperties}>
-      <header className="flex items-center justify-between py-5">
-        <span className="font-display text-2xl font-extrabold tracking-tight">White</span>
+    <div className="mx-auto min-h-dvh max-w-2xl pr-[max(1rem,env(safe-area-inset-right))] pb-[calc(7rem+env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))]" data-mode={status.mode} style={{ '--color-accent': status.accent } as CSSProperties}>
+      <header className="flex items-center justify-between pt-[max(1rem,env(safe-area-inset-top))] pb-4">
+        <span className="flex items-center gap-2 font-display text-2xl font-extrabold tracking-tight">
+          <img src="/logo.svg" alt="" className="size-8" />
+          White
+        </span>
         <div className="flex items-center gap-3 text-sm sm:gap-4">
           <span className="text-muted">{customerId}</span>
-          <button onClick={onLogout} className="underline underline-offset-4">
+          <button onClick={onLogout} className="tap underline underline-offset-4">
             Log out
           </button>
         </div>
@@ -407,13 +423,14 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
 
       <MorningBriefing customerId={customerId} context={chatContext} mode={status.name} />
 
-      <nav className="mb-6 flex gap-2 overflow-x-auto text-sm">
+      {/* The tabs stay within reach while the page scrolls under them. */}
+      <nav className="scroll-row sticky top-0 z-10 -mx-4 mb-4 flex gap-2 bg-paper/90 px-4 py-2 text-sm backdrop-blur-md">
         {tabs.map(([id, name]) => (
           <button
             key={id}
-            onClick={() => setView(id)}
+            onClick={() => go(id)}
             aria-current={view === id || ((view === 'wellness' || view === 'score-details') && id === 'overview') ? 'page' : undefined}
-            className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 ${
+            className={`min-h-11 shrink-0 whitespace-nowrap rounded-full px-5 py-2 ${
               view === id || ((view === 'wellness' || view === 'score-details') && id === 'overview')
                 ? 'bg-ink font-semibold text-white' : 'bg-white text-muted hover:text-ink'
             }`}
@@ -443,8 +460,8 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           answers={answers}
           wellnessLoading={wellnessLoading}
           wellnessError={wellnessError}
-          onShowWellness={() => setView('score-details')}
-          onShowAll={() => setView('transactions')}
+          onShowWellness={() => go('score-details')}
+          onShowAll={() => go('transactions')}
           onAsk={askScenario}
         />
       ) : view === 'score-details' ? (
@@ -453,8 +470,8 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           answers={answers}
           loading={wellnessLoading}
           error={wellnessError}
-          onBack={() => setView('overview')}
-          onShowWellness={() => setView('wellness')}
+          onBack={() => go('overview')}
+          onShowWellness={() => go('wellness')}
           onImprove={() => askScenario(IMPROVE_PROMPT)}
         />
       ) : view === 'transactions' ? (
@@ -468,7 +485,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
         wellnessError ? (
           <div className="text-sm text-red-700">
             <p>Could not load financial data.</p>
-            <button className="mt-2 underline" onClick={() => {
+            <button className="tap mt-2 underline" onClick={() => {
               setWellnessError(false)
               setWellnessAttempt((n) => n + 1)
             }}>Retry</button>
@@ -541,7 +558,8 @@ function WalterBar({ chat }: { chat: (question: string | null, onAsked: () => vo
   const [question, setQuestion] = useState<string | null>(null)
   return (
     <>
-      <div className="fixed inset-x-0 bottom-4 z-10 px-4">
+      {/* Above the home bar, and above the keyboard while typing (--kb, main.tsx). */}
+      <div className="fixed inset-x-0 bottom-[calc(max(1rem,env(safe-area-inset-bottom))+var(--kb,0px))] z-20 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))]">
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -549,20 +567,22 @@ function WalterBar({ chat }: { chat: (question: string | null, onAsked: () => vo
             setDraft('')
             setOpen(true)
           }}
-          className="mx-auto flex max-w-2xl items-center gap-3 rounded-full bg-white p-2 shadow-[0_8px_30px_rgb(12_16_48/0.16)]"
+          className="mx-auto flex max-w-2xl items-center gap-3 rounded-full bg-white p-1.5 shadow-[0_8px_30px_rgb(12_16_48/0.16)]"
         >
-          <WalterAvatar className="h-10 w-10 shrink-0" />
+          <WalterAvatar className="size-11 shrink-0" />
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             maxLength={2000}
             aria-label="Ask Walter"
-            placeholder="Talk with Walter, your personal agent…"
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
+            enterKeyHint="send"
+            autoComplete="off"
+            placeholder="Ask Walter anything…"
+            className="min-h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />
           <button
             aria-label="Send to Walter"
-            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:bg-accent/90"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent text-white hover:bg-accent/90"
           >
             <span aria-hidden="true">→</span>
           </button>
@@ -651,7 +671,7 @@ function Overview({
     <div className="space-y-6">
       <section className="rounded-lg bg-accent p-6 text-white sm:p-8">
         <p className="text-sm text-white/85">Current account {latest.bank_account_id}</p>
-        <p className="mt-3 font-display text-5xl font-extrabold tracking-tight sm:text-6xl">
+        <p className="mt-3 font-display text-[clamp(2.25rem,12vw,3rem)] leading-none font-extrabold tracking-tight whitespace-nowrap sm:text-6xl">
           <CipherText id="balance" text={eur(latest.balance_after_eur)} />
         </p>
         {status.figure && (
@@ -690,7 +710,7 @@ function Overview({
             </div>
             <WellnessApple stage={score === null ? null : Math.min(4, Math.floor(score / 20))} golden={score === 100 && !displayScore.provisional} className="size-16 shrink-0" />
           </div>
-          <button onClick={onShowWellness} className="mt-auto flex w-full items-center justify-center rounded-full bg-paper px-3 py-3 text-sm font-semibold hover:bg-line">
+          <button onClick={onShowWellness} className="mt-auto flex min-h-12 w-full items-center justify-center rounded-full bg-paper px-3 py-3 text-sm font-semibold hover:bg-line">
             See details
           </button>
         </div>
@@ -710,7 +730,7 @@ function Overview({
 
       {(baskets || benchmark || area || tips.length > 0) && (
         <details className="group">
-          <summary className="flex cursor-pointer list-none items-center justify-center gap-1.5 rounded-full bg-white px-3 py-3 text-sm font-semibold hover:bg-line [&::-webkit-details-marker]:hidden">
+          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-center gap-1.5 rounded-full bg-white px-3 py-3 text-sm font-semibold hover:bg-line [&::-webkit-details-marker]:hidden">
             All your numbers <span aria-hidden="true" className="group-open:rotate-180">↓</span>
           </summary>
           <div className="mt-6 space-y-6">
@@ -725,7 +745,7 @@ function Overview({
       <Card>
         <div className="flex items-baseline justify-between px-5 pt-4 pb-1">
           <h2 className="text-lg font-bold">Latest transactions</h2>
-          <button onClick={onShowAll} className="text-sm underline underline-offset-4">
+          <button onClick={onShowAll} className="tap text-sm underline underline-offset-4">
             Show all
           </button>
         </div>
@@ -835,14 +855,14 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
   const seeDetails = (id: string, subject: string) => (
     <button type="button" onClick={() => toggleDetails(id)} aria-expanded={openDetails === id} aria-controls={openDetails === id ? `score-${id}` : undefined}
       aria-label={`${openDetails === id ? 'Hide details' : 'See details'} about ${subject}`}
-      className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+      className="min-h-11 rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
       {openDetails === id ? 'Hide details' : 'See details'} <span aria-hidden="true">{openDetails === id ? '↑' : '↓'}</span>
     </button>
   )
 
   return (
     <div className="space-y-6">
-      <button onClick={onBack} className="text-sm font-medium text-muted underline-offset-4 hover:underline">← Back to overview</button>
+      <button onClick={onBack} className="tap text-sm font-medium text-muted underline-offset-4 hover:underline">← Back to overview</button>
       <header>
         <h1 className="text-3xl font-bold tracking-tight">Your financial profile</h1>
         <p className="mt-1 text-sm text-muted">Your financial well-being at a glance.</p>
@@ -856,7 +876,7 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
             </p>
             {scoreMessage && <p className="mt-3 text-sm font-medium text-muted">{scoreMessage}</p>}
             <div className="mt-5 flex flex-wrap items-center gap-2">
-              <button type="button" onClick={onShowWellness} className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+              <button type="button" onClick={onShowWellness} className="min-h-11 rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
                 {displayScore.provisional ? 'Complete your assessment' : 'See how it is built'}
               </button>
               {seeDetails('score', 'the score')}
@@ -896,12 +916,12 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
           {levels.map((level, index) => (
             <li key={level.range} className={`min-w-0 rounded-2xl p-1 text-center sm:p-2 ${stage === index ? 'bg-paper ring-2 ring-accent' : 'bg-paper'}`}>
               <WellnessApple stage={index} className="mx-auto w-full max-w-20" />
-              <p className="text-[10px] font-semibold leading-tight text-ink sm:text-sm">{level.name}</p>
-              <p className="text-[10px] text-muted sm:text-xs">{level.range}</p>
+              <p className="text-[11px] font-semibold leading-tight text-ink sm:text-sm">{level.name}</p>
+              <p className="text-[11px] text-muted sm:text-xs">{level.range}</p>
             </li>
           ))}
         </ol>
-        <button type="button" onClick={onImprove} className="mt-4 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+        <button type="button" onClick={onImprove} className="mt-4 min-h-11 w-full rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent/90 focus-visible sm:w-auto:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
           How can I improve?
         </button>
         {openDetails === 'levels' && (
@@ -916,9 +936,9 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
           <h2 id="tips-title" className="text-xl font-bold">Small steps, big difference</h2>
           <div className="flex shrink-0 gap-2">
             <button type="button" onClick={() => showTip(activeTip - 1)} disabled={activeTip === 0} aria-label="Previous suggestion"
-              className="grid size-9 place-items-center rounded-full border border-line bg-white text-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40">←</button>
+              className="grid size-11 place-items-center rounded-full border border-line bg-white text-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40">←</button>
             <button type="button" onClick={() => showTip(activeTip + 1)} disabled={activeTip === tips.length - 1} aria-label="Next suggestion"
-              className="grid size-9 place-items-center rounded-full border border-line bg-white text-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40">→</button>
+              className="grid size-11 place-items-center rounded-full border border-line bg-white text-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40">→</button>
           </div>
         </div>
         <ul ref={tipsList} aria-label="Financial suggestions; swipe or scroll to explore" tabIndex={0}
@@ -926,7 +946,7 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
             const list = event.currentTarget
             if (list.clientWidth) setActiveTip(Math.max(0, Math.min(tips.length - 1, Math.round(list.scrollLeft / list.clientWidth))))
           }}
-          className="mt-3 flex snap-x snap-mandatory overflow-x-auto rounded-3xl scroll-smooth focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+          className="scroll-row mt-3 flex snap-x snap-mandatory rounded-3xl scroll-smooth focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
           {tips.map((tip, index) => (
             <li key={tip.title} className="w-full shrink-0 snap-start">
               <article className="flex min-h-56 flex-col rounded-3xl bg-white p-6 sm:min-h-52">
@@ -939,11 +959,11 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
             </li>
           ))}
         </ul>
-        <div className="mt-3 flex items-center justify-center gap-2" aria-label="Choose a suggestion">
+        <div className="mt-3 flex items-center justify-center gap-4" aria-label="Choose a suggestion">
           {tips.map((tip, index) => (
             <button key={tip.title} type="button" onClick={() => showTip(index)} aria-label={`Go to suggestion ${index + 1}: ${tip.title}`}
               aria-current={activeTip === index ? 'step' : undefined}
-              className={`size-3 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${activeTip === index ? 'bg-accent' : 'bg-line hover:bg-muted'}`} />
+              className={`tap size-3 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${activeTip === index ? 'bg-accent' : 'bg-line hover:bg-muted'}`} />
           ))}
         </div>
       </section>
@@ -986,7 +1006,7 @@ function FinancialWellness({ data: w, answers }: {
       aria-label={`About ${name}`}
       aria-expanded={openInfo === id}
       onClick={() => setOpenInfo(openInfo === id ? null : id)}
-      className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-line text-xs font-semibold text-muted hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+      className="tap inline-flex h-5 w-5 items-center justify-center rounded-full border border-line text-xs font-semibold text-muted hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
     >
       i
     </button>
@@ -1147,7 +1167,7 @@ function Transactions({
         <button
           onClick={onMore}
           disabled={loading}
-          className="mt-4 w-full rounded-full bg-white py-3 text-sm font-semibold hover:bg-line disabled:opacity-50"
+          className="mt-4 min-h-12 w-full rounded-full bg-white py-3 text-sm font-semibold hover:bg-line disabled:opacity-50"
         >
           Show more
         </button>
@@ -1202,7 +1222,7 @@ function NextSteps({ facts: f, steps, step, error, loadError, onRetry }: {
           ) : error ? (
             <div className="text-sm text-red-700">
               <p>Could not write your next steps: {error}</p>
-              <button className="mt-2 underline" onClick={onRetry}>Retry</button>
+              <button className="tap mt-2 underline" onClick={onRetry}>Retry</button>
             </div>
           ) : steps ? (
             <ol>

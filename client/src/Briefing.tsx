@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { WalterAvatar } from './WalterAvatar'
+import { onBackdrop } from './sheet'
 import { speak, stopSpeaking, useVoice } from './voice'
 
 // The morning briefing: one minute, once a day. Where the customer's money
@@ -92,7 +93,7 @@ export function MorningBriefing({ customerId, context, mode }: { customerId: str
         onClick={start}
         disabled={!ready}
         aria-label="Play your one-minute morning briefing"
-        className="mb-5 flex w-full items-center gap-3 rounded-full bg-white py-2 pl-2 pr-5 text-left transition hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-deep disabled:cursor-wait"
+        className="mb-4 flex w-full items-center gap-3 rounded-full bg-white py-2 pl-2 pr-5 text-left transition hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-deep disabled:cursor-wait"
       >
         <span className={`flex size-10 shrink-0 items-center justify-center rounded-full bg-accent-deep text-white ${ready && !seen ? 'briefing-pulse' : ''}`}>
           {ready ? (
@@ -149,11 +150,11 @@ function BriefingDialog({ briefing, error, onRetry, onClose }: { briefing: Brief
     <dialog
       ref={dialog}
       onClose={onClose}
-      onClick={(e) => e.target === dialog.current && dialog.current?.close()}
+      onClick={(e) => onBackdrop(e) && dialog.current?.close()}
       aria-labelledby="briefing-title"
-      className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-lg bg-white p-0 text-ink shadow-xl backdrop:bg-ink/40 backdrop:backdrop-blur-sm"
+      className="sheet max-w-lg bg-white text-ink shadow-xl backdrop:bg-ink/40 backdrop:backdrop-blur-sm"
     >
-      <div className="max-h-[85vh] overflow-y-auto px-6 pb-7 pt-5 sm:px-8">
+      <div className="px-6 pb-7 pt-5 sm:px-8">
         <div className="flex items-center gap-3">
           <WalterAvatar talking={voice.speaking} />
           <p className="flex-1 text-sm text-muted">
@@ -163,13 +164,13 @@ function BriefingDialog({ briefing, error, onRetry, onClose }: { briefing: Brief
           {briefing && (
             <button
               onClick={() => (talking || playing ? stopSpeaking() : play(briefing))}
-              className="text-sm font-medium text-accent-deep underline-offset-4 hover:underline"
+              className="tap text-sm font-medium text-accent-deep underline-offset-4 hover:underline"
             >
               {talking ? 'Pause' : 'Listen'}
             </button>
           )}
-          <button onClick={() => dialog.current?.close()} aria-label="Close briefing" className="-mr-2 rounded-full p-2 text-muted hover:bg-paper hover:text-ink">
-            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+          <button onClick={() => dialog.current?.close()} aria-label="Close briefing" className="-mr-3 flex size-11 items-center justify-center rounded-full text-muted hover:bg-paper hover:text-ink">
+            <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
           </button>
@@ -181,7 +182,7 @@ function BriefingDialog({ briefing, error, onRetry, onClose }: { briefing: Brief
         {error ? (
           <div className="mt-6 text-sm text-red-700">
             <p>Walter could not write today's briefing. {error}</p>
-            <button className="mt-2 underline" onClick={onRetry}>Try again</button>
+            <button className="tap mt-2 underline" onClick={onRetry}>Try again</button>
           </div>
         ) : !briefing ? (
           <div className="mt-6 space-y-3" aria-busy>

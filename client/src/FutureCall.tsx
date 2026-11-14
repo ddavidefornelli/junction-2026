@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { sendChat, type ChatMessage } from './assistant'
 import { at, dryYear, futureContext, gap, invested, MAX_YEARS, RETURN, runsOut, type Future } from './future'
+import { onBackdrop } from './sheet'
 import { Talk } from './Talk'
 import { WellnessApple } from './WellnessApple'
 import { speak, stopSpeaking, useVoice } from './voice'
@@ -143,17 +144,17 @@ function FutureDialog({ future: f, context, age, onClose }: { future: Future; co
     <dialog
       ref={dialog}
       onClose={onClose}
-      onClick={(e) => e.target === dialog.current && dialog.current?.close()}
+      onClick={(e) => onBackdrop(e) && dialog.current?.close()}
       aria-labelledby="future-dialog-title"
-      className="m-auto w-[calc(100%-2rem)] max-w-xl rounded-2xl bg-white p-0 text-ink shadow-xl backdrop:bg-ink/50 backdrop:backdrop-blur-sm"
+      className="sheet max-w-xl bg-white text-ink shadow-xl backdrop:bg-ink/50 backdrop:backdrop-blur-sm"
     >
-      <div className="max-h-[90vh] overflow-y-auto p-5 sm:p-6">
-        <div className="flex items-center gap-3">
-          <div className="flex-1">
+      <div className="p-5 sm:p-6">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
             <h2 id="future-dialog-title" className="font-semibold">Call your future self</h2>
             <p className="text-xs text-muted">An illustration, not a forecast. Invested money is assumed to grow {Math.round(RETURN * 100)}% a year; markets can fall.</p>
           </div>
-          <button type="button" onClick={() => dialog.current?.close()} aria-label="Close" className="rounded-md px-2 py-1 text-lg leading-none text-muted hover:bg-paper">×</button>
+          <button type="button" onClick={() => dialog.current?.close()} aria-label="Close" className="-mt-2 -mr-2 flex size-11 shrink-0 items-center justify-center rounded-full text-2xl leading-none text-muted hover:bg-paper">×</button>
         </div>
 
         {changed === null ? (
@@ -170,7 +171,7 @@ function FutureDialog({ future: f, context, age, onClose }: { future: Future; co
                 type="range" min={1} max={MAX_YEARS} step={1} value={years}
                 onChange={(e) => setYears(Number(e.target.value))}
                 aria-label="Years from now" aria-valuetext={`${years} years from now, ${same.year}`}
-                className="mt-5 block w-full accent-white"
+                className="mt-4 block h-11 w-full touch-pan-y accent-white"
               />
             </div>
 
@@ -197,7 +198,7 @@ function FutureDialog({ future: f, context, age, onClose }: { future: Future; co
                   <button
                     onClick={() => dial(which)}
                     disabled={context === null}
-                    className={`flex shrink-0 items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm whitespace-nowrap font-semibold text-white disabled:opacity-40 ${which ? 'bg-credit hover:bg-credit/90' : 'bg-ink hover:bg-ink/90'}`}
+                    className={`flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm whitespace-nowrap font-semibold text-white disabled:opacity-40 ${which ? 'bg-credit hover:bg-credit/90' : 'bg-ink hover:bg-ink/90'}`}
                   >
                     <PhoneIcon /> Call this you
                   </button>
@@ -226,7 +227,7 @@ function FutureDialog({ future: f, context, age, onClose }: { future: Future; co
             <div className="mt-3 flex flex-wrap justify-center gap-2">
               {QUESTIONS.map((q) => (
                 <button key={q} onClick={() => void say(q, changed)} disabled={busy || talking || conversing || !greeted}
-                  className="rounded-full border border-line px-3 py-1.5 text-xs font-medium hover:border-ink disabled:opacity-40">
+                  className="min-h-10 rounded-full border border-line px-3.5 py-2 text-sm font-medium hover:border-ink disabled:opacity-40 sm:min-h-0 sm:py-1.5 sm:text-xs">
                   {q}
                 </button>
               ))}
@@ -244,8 +245,8 @@ function FutureDialog({ future: f, context, age, onClose }: { future: Future; co
               }
             />
             <div className="mt-2 flex justify-center gap-3">
-              <button onClick={hangUp} className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700">Hang up</button>
-              <button onClick={() => dial(!changed)} className="rounded-full bg-paper px-5 py-2.5 text-sm font-semibold hover:bg-line">Call the other you</button>
+              <button onClick={hangUp} className="min-h-11 rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700">Hang up</button>
+              <button onClick={() => dial(!changed)} className="min-h-11 rounded-full bg-paper px-5 py-2.5 text-sm font-semibold hover:bg-line">Call the other you</button>
             </div>
           </>
         )}

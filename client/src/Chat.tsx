@@ -7,7 +7,7 @@ import { SecureNote } from './Security'
 import { Talk } from './Talk'
 import { speak, speakableText, useVoice } from './voice'
 
-const BUBBLE = 'w-fit max-w-[90%] whitespace-pre-wrap rounded-2xl px-4 py-2 text-sm'
+const BUBBLE = 'w-fit max-w-[90%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2 text-[15px] leading-snug sm:text-sm'
 
 // The question asked when a bar or a point of a chart is clicked.
 const followUp = (type: Chart['type'], label: string) =>
@@ -127,9 +127,9 @@ export function Chat({
   // Follow-up questions Walter offered with his latest reply, shown as buttons.
   const suggestions = last?.role === 'assistant' ? suggestionsOf(last.content) : []
   return (
-    <div className="mt-auto">
+    <div className="flex min-h-0 flex-1 flex-col">
       {messages.length > 0 ? (
-        <div ref={log} aria-live="polite" className="mb-3 max-h-[60vh] space-y-2 overflow-y-auto">
+        <div ref={log} aria-live="polite" className="mb-3 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
           {messages.map((m, i) =>
             m.role === 'user' ? (
               <p key={i} className={`ml-auto bg-ink text-white ${BUBBLE}`}>
@@ -158,7 +158,7 @@ export function Chat({
                   key={`${i}-listen`}
                   onClick={() => void speak(m.content)}
                   disabled={voice.loading}
-                  className="block text-xs text-muted underline-offset-4 hover:text-ink hover:underline disabled:opacity-50"
+                  className="tap block text-xs text-muted underline-offset-4 hover:text-ink hover:underline disabled:opacity-50"
                 >
                   <span aria-hidden="true">🔊 </span>Listen
                 </button>
@@ -172,7 +172,7 @@ export function Chat({
                   key={s}
                   onClick={() => ask(s)}
                   disabled={context === null}
-                  className="rounded-full border border-line bg-white px-3 py-1 text-left text-xs hover:border-ink disabled:opacity-50"
+                  className="min-h-10 rounded-2xl border border-line bg-white px-3.5 py-2 text-left text-sm hover:border-ink disabled:opacity-50 sm:min-h-0 sm:py-1 sm:text-xs"
                 >
                   {s}
                 </button>
@@ -188,7 +188,7 @@ export function Chat({
             <p className="text-sm text-red-700">
               Walter could not answer.{' '}
               {last?.role === 'user' && (
-                <button onClick={() => ask(last.content)} className="underline underline-offset-4">
+                <button onClick={() => ask(last.content)} className="tap underline underline-offset-4">
                   Try again
                 </button>
               )}
@@ -196,13 +196,13 @@ export function Chat({
           )}
         </div>
       ) : (
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div className="mb-3 flex min-h-0 flex-wrap gap-2 overflow-y-auto">
           {starters.map((s) => (
             <button
               key={s}
               onClick={() => ask(s)}
               disabled={context === null}
-              className="rounded-full border border-line px-3 py-1 text-left text-xs hover:border-ink disabled:opacity-50"
+              className="min-h-10 rounded-2xl border border-line px-3.5 py-2 text-left text-sm hover:border-ink disabled:opacity-50 sm:min-h-0 sm:py-1 sm:text-xs"
             >
               {s}
             </button>
@@ -212,25 +212,27 @@ export function Chat({
       {voice.mode === 'talk' ? (
         <Talk ask={ask} disabled={context === null} />
       ) : (
-        <form onSubmit={submit} className="flex gap-2">
+        <form onSubmit={submit} className="flex shrink-0 gap-2">
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             maxLength={2000}
             aria-label="Chat message"
+            enterKeyHint="send"
+            autoComplete="off"
             placeholder={context === null ? 'Loading your data…' : 'Ask a question…'}
-            className="min-w-0 flex-1 rounded-full border border-line bg-white px-4 py-2 text-sm outline-none placeholder:text-muted focus:border-ink"
+            className="min-h-11 min-w-0 flex-1 rounded-full border border-line bg-white px-4 py-2 text-sm outline-none placeholder:text-muted focus:border-ink"
           />
           <button
             disabled={busy || context === null || !draft.trim()}
             aria-label="Send message"
-            className="rounded-full bg-accent px-4 text-sm font-semibold text-white hover:bg-accent/90 disabled:opacity-50"
+            className="min-h-11 shrink-0 rounded-full bg-accent px-5 text-sm font-semibold text-white hover:bg-accent/90 disabled:opacity-50"
           >
             Send
           </button>
         </form>
       )}
-      <div className="mt-2.5">
+      <div className="mt-2.5 shrink-0">
         <SecureNote>
           Walter sees your figures, never your customer ID or account number. This chat is not saved
           {voice.mode === 'talk' ? '; your voice is turned into text by ElevenLabs and not kept.' : '.'}

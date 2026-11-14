@@ -211,9 +211,125 @@
   }
 }
 
+html {
+  /* Phones: no text inflation in landscape, no grey flash on tap. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
   background: var(--color-paper);
   color: var(--color-ink);
+}
+
+/* Mobile first: most customers are on a phone. */
+
+/* No 300 ms wait and no double-tap zoom on anything tappable. */
+button,
+a,
+summary,
+select,
+input,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+/* iOS zooms the page into any field whose text is under 16px. */
+@media (pointer: coarse) {
+  input:not([type='range']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* A finger gets feedback where a mouse gets hover. */
+@media (hover: none) and (prefers-reduced-motion: no-preference) {
+  button:not(:disabled),
+  summary {
+    transition: transform 0.08s ease-out;
+  }
+  button:not(:disabled):active,
+  summary:active {
+    transform: scale(0.97);
+  }
+}
+
+/* Small text buttons ("Show all", "Log out"): a 44px touch area without changing how they look. */
+@utility tap {
+  position: relative;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: -0.75rem -0.375rem;
+  }
+}
+
+/* A row that scrolls sideways under the finger, without a scrollbar. */
+@utility scroll-row {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Dialogs (chat, briefing, future call, what-if). On a phone they are sheets:
+   full width, risen from the bottom edge, above the keyboard, never taller than
+   what is visible. From 640px they are centred cards. Their one child scrolls.
+   --vvh and --kb come from main.tsx. */
+dialog.sheet {
+  margin: auto;
+  width: calc(100% - 2rem);
+  max-height: min(90dvh, calc(var(--vvh, 100dvh) - 1rem));
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+dialog.sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+dialog.sheet > * {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@media (max-width: 639px) {
+  dialog.sheet {
+    width: 100%;
+    max-width: 100%;
+    margin: auto 0 var(--kb, 0px);
+    max-height: calc(var(--vvh, 100dvh) - env(safe-area-inset-top) - 0.75rem);
+    border-radius: 1.75rem 1.75rem 0 0;
+    /* Clear the home bar, unless the keyboard is already covering it. */
+    padding-bottom: max(0px, calc(env(safe-area-inset-bottom) - var(--kb, 0px)));
+    animation: sheet-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  /* Blurring the whole page behind is slow on phones; the dimming is enough. */
+  dialog.sheet::backdrop {
+    backdrop-filter: none;
+    animation: sheet-dim 0.2s ease-out;
+  }
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(2.5rem);
+    opacity: 0;
+  }
+}
+@keyframes sheet-dim {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  dialog.sheet,
+  dialog.sheet::backdrop {
+    animation: none;
+  }
 }
 
 /* The morning briefing's play button, until it has been played today (src/Briefing.tsx). */

@@ -15,7 +15,7 @@ export function ChatLookup({ lookup }: { lookup: Lookup }) {
   const { title, from, to, count, total, rows, more } = lookup
   return (
     <details className="group max-w-[90%] rounded-lg bg-white text-xs">
-      <summary className="flex cursor-pointer list-none items-baseline gap-x-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-10 cursor-pointer list-none items-center gap-x-2 px-3 py-2 sm:min-h-0 sm:items-baseline [&::-webkit-details-marker]:hidden">
         <span aria-hidden="true" className="text-muted transition-transform group-open:rotate-90">›</span>
         <span className="min-w-0 flex-1">
           <span className="font-medium">{title}</span>

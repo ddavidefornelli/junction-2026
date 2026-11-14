@@ -132,13 +132,13 @@ export function Talk({ ask, disabled, who = 'Walter', avatar, onActive }: {
           onClick={press}
           disabled={!canPress}
           aria-label={phase === 'off' ? `Start talking to ${who}` : phase === 'listening' ? 'Done talking' : `Interrupt ${who}`}
-          className={`flex size-14 items-center justify-center rounded-full text-white shadow-md transition disabled:opacity-40 ${phase === 'listening' ? 'bg-red-600 hover:bg-red-700' : 'bg-ink hover:bg-ink/90'}`}
+          className={`flex size-16 items-center justify-center rounded-full text-white shadow-md transition disabled:opacity-40 ${phase === 'listening' ? 'bg-red-600 hover:bg-red-700' : 'bg-ink hover:bg-ink/90'}`}
         >
           {phase === 'listening' ? <StopIcon /> : speaking ? <HandIcon /> : <MicIcon />}
         </button>
       </div>
       {phase !== 'off' && (
-        <button onClick={() => end()} className="text-xs text-muted underline-offset-4 hover:text-ink hover:underline">
+        <button onClick={() => end()} className="tap text-sm text-muted underline underline-offset-4 hover:text-ink">
           End conversation
         </button>
       )}

@@ -55,7 +55,7 @@ export function BenchmarkCard({ data }: { data: Benchmark }) {
             type="button"
             onClick={() => setAll(!all)}
             aria-expanded={all}
-            className="mt-4 text-sm font-medium underline-offset-2 hover:underline"
+            className="tap mt-4 text-sm font-medium underline underline-offset-4"
           >
             {all ? 'Show less' : `Show all ${data.lines.length}`}
           </button>

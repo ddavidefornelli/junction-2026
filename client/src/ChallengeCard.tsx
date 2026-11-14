@@ -82,7 +82,7 @@ function Picker({ offers, today, onStart }: { offers: Offer[]; today: string; on
                     <span className="block font-semibold">{o.name}</span>
                     <span className="mt-0.5 block text-sm text-muted">{o.pitch}</span>
                   </span>
-                  <span aria-hidden="true" className="flex size-8 shrink-0 items-center justify-center rounded-full bg-paper">→</span>
+                  <span aria-hidden="true" className="flex size-9 shrink-0 items-center justify-center rounded-full bg-paper">→</span>
                 </button>
               </li>
             ))}
@@ -96,7 +96,7 @@ function Picker({ offers, today, onStart }: { offers: Offer[]; today: string; on
   return (
     <section aria-labelledby="challenge-title" className="rounded-lg bg-white ring-2 ring-accent">
       <div className="p-6">
-        <button type="button" onClick={() => setPicked(null)} className="text-sm underline underline-offset-4">← Other challenges</button>
+        <button type="button" onClick={() => setPicked(null)} className="tap text-sm underline underline-offset-4">← Other challenges</button>
         <p className="mt-4 text-sm font-semibold text-accent">{picked.name}</p>
         <h2 id="challenge-title" className="mt-1 text-4xl font-extrabold tracking-tight">{c.title}</h2>
         <p className="mt-1 text-sm text-muted">{picked.pitch}</p>
@@ -146,7 +146,7 @@ function Choice<T extends number>({ label, options, value, onChange }: {
             type="button"
             aria-pressed={value === o.value}
             onClick={() => onChange(o.value)}
-            className={`rounded-full px-2 py-2.5 text-sm ${value === o.value ? 'bg-ink font-semibold text-white' : 'bg-paper hover:bg-line'}`}
+            className={`min-h-11 rounded-full px-2 py-2.5 text-sm ${value === o.value ? 'bg-ink font-semibold text-white' : 'bg-paper hover:bg-line'}`}
           >
             {o.label}
           </button>
@@ -206,15 +206,15 @@ function Tracker({ challenge: c, all, onEnd, onAsk }: { challenge: Challenge; al
           ) : stopping ? (
             <p role="alert" className="flex flex-wrap items-center gap-3">
               Stop this challenge? Your progress is cleared.
-              <button type="button" onClick={onEnd} className="font-medium text-red-700 underline underline-offset-4">Yes, stop</button>
-              <button type="button" onClick={() => setStopping(false)} className="underline underline-offset-4">Keep going</button>
+              <button type="button" onClick={onEnd} className="tap font-medium text-red-700 underline underline-offset-4">Yes, stop</button>
+              <button type="button" onClick={() => setStopping(false)} className="tap underline underline-offset-4">Keep going</button>
             </p>
           ) : (
             <>
-              <button type="button" onClick={() => onAsk(`I am on day ${p.day} of my challenge "${c.title}". ${c.rule} How do I stick to it?`)} className="underline underline-offset-4">
+              <button type="button" onClick={() => onAsk(`I am on day ${p.day} of my challenge "${c.title}". ${c.rule} How do I stick to it?`)} className="tap underline underline-offset-4">
                 Ask Walter for help <span aria-hidden="true">→</span>
               </button>
-              <button type="button" onClick={() => setStopping(true)} className="text-muted underline underline-offset-4">Stop the challenge</button>
+              <button type="button" onClick={() => setStopping(true)} className="tap text-muted underline underline-offset-4">Stop the challenge</button>
             </>
           )}
         </div>

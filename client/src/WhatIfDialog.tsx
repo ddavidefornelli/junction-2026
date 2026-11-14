@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getWhatIfScenarios } from './assistant'
+import { onBackdrop } from './sheet'
 import { WalterAvatar } from './WalterAvatar'
 
 // Walter offers choices first. Only picking one starts a conversation in the chat.
@@ -37,9 +38,9 @@ export function WhatIfDialog({ context, onPick, onClose }: {
     <dialog
       ref={dialog}
       onClose={onClose}
-      onClick={(e) => e.target === dialog.current && dialog.current?.close()}
+      onClick={(e) => onBackdrop(e) && dialog.current?.close()}
       aria-labelledby="what-if-title"
-      className="m-auto w-[calc(100%-2rem)] max-w-xl rounded-2xl bg-white p-0 text-ink shadow-xl backdrop:bg-ink/30 backdrop:backdrop-blur-sm"
+      className="sheet max-w-xl bg-white text-ink shadow-xl backdrop:bg-ink/30 backdrop:backdrop-blur-sm"
     >
       <div className="p-5 sm:p-6">
         <div className="flex items-center gap-3">
@@ -49,7 +50,7 @@ export function WhatIfDialog({ context, onPick, onClose }: {
             <p className="text-xs text-muted">Explore your options with Walter</p>
           </div>
           <button type="button" onClick={() => dialog.current?.close()} aria-label="Close scenarios"
-            className="rounded-md px-2 py-1 text-lg leading-none text-muted hover:bg-paper">×</button>
+            className="-mr-2 flex size-11 shrink-0 items-center justify-center rounded-full text-2xl leading-none text-muted hover:bg-paper">×</button>
         </div>
         <p className="mt-5 text-sm text-ink">Choose a question. Walter will work out what it could mean for you.</p>
         <div aria-live="polite" className="mt-4">
@@ -57,7 +58,7 @@ export function WhatIfDialog({ context, onPick, onClose }: {
             <p className="text-sm text-red-700">{error}{' '}
               {error !== 'Not enough spending data for scenarios yet' && (
                 <button type="button" onClick={() => setAttempt((n) => n + 1)}
-                  className="font-medium underline underline-offset-2">Try again</button>
+                  className="tap font-medium underline underline-offset-2">Try again</button>
               )}
             </p>
           ) : questions.length ? (

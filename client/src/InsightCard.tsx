@@ -33,7 +33,7 @@ export function InsightCard({ insight: x, first, onAsk }: { insight: Insight; fi
         <div className="mt-6 rounded-md bg-paper p-4">
           <p className="text-xs font-semibold text-accent">Do this</p>
           <p className="mt-1 text-sm font-medium">{x.action}</p>
-          <button type="button" onClick={() => onAsk(x.ask)} className="mt-3 rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white hover:bg-ink/90">
+          <button type="button" onClick={() => onAsk(x.ask)} className="mt-3 min-h-11 rounded-full bg-ink px-5 py-2 text-sm font-semibold text-white hover:bg-ink/90">
             Plan it with Walter
           </button>
         </div>

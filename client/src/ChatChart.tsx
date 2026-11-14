@@ -52,7 +52,7 @@ function Bars({ chart, onPick }: { chart: Chart; onPick?: (label: string) => voi
             onClick: () => onPick(d.label),
             onKeyDown: (e: React.KeyboardEvent) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onPick(d.label)),
           })}
-          className={`-mx-1.5 rounded px-1.5 py-0.5 ${onPick ? 'cursor-pointer transition-colors hover:bg-paper focus-visible:bg-paper focus-visible:outline-none' : ''}`}
+          className={`-mx-1.5 rounded px-1.5 ${onPick ? 'py-1.5 sm:py-0.5' : 'py-0.5'} ${onPick ? 'cursor-pointer transition-colors hover:bg-paper focus-visible:bg-paper focus-visible:outline-none' : ''}`}
         >
           <dt className="truncate text-xs text-muted">{label(d.label)}</dt>
           {d.values.map((v, i) => (
@@ -117,7 +117,7 @@ function Lines({ chart, onPick }: { chart: Chart; onPick?: (label: string) => vo
           {chart.data.map((d, i) => (
             <g key={i} onClick={onPick && (() => onPick(d.label))} className={onPick ? 'group cursor-pointer' : undefined}>
               {/* a larger invisible target, so the point is easy to tap */}
-              {onPick && <circle cx={x(i)} cy={y(d.values[s])} r="9" fill="transparent" />}
+              {onPick && <circle cx={x(i)} cy={y(d.values[s])} r="14" fill="transparent" />}
               <circle
                 cx={x(i)}
                 cy={y(d.values[s])}
