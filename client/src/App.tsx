@@ -663,7 +663,6 @@ function Overview({
             )}
           </div>
         )}
-        <p className="mt-4 text-xs text-white/85">Read-only view. Nothing in this app can move your money.</p>
       </section>
 
       <Card>

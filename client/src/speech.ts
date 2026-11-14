@@ -95,5 +95,80 @@ export function spokenForm(text: string, thisYear = new Date().getFullYear()): s
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\s+([.,!?])/g, '$1')
     .trim()
-  return s
+  return inWords(s)
+}
+
+// Every number as words. ElevenLabs' fast voices read digits as they come
+// ("4,700" can come out as "four, seven hundred"), so nothing reaches the voice
+// as a digit: amounts, dates, years, times and counts are all spelled out.
+const ONES = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen']
+const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety']
+const SCALES: [number, string][] = [[1e9, 'billion'], [1e6, 'million'], [1e3, 'thousand']]
+
+function below100(n: number): string {
+  return n < 20 ? ONES[n] : `${TENS[Math.floor(n / 10)]}${n % 10 ? `-${ONES[n % 10]}` : ''}`
+}
+
+function below1000(n: number): string {
+  const h = Math.floor(n / 100)
+  const r = n % 100
+  return [h ? `${ONES[h]} hundred` : '', r || !h ? below100(r) : ''].filter(Boolean).join(' ')
+}
+
+export function numberWords(n: number): string {
+  if (!Number.isFinite(n)) return String(n)
+  if (n < 0) return `minus ${numberWords(-n)}`
+  if (!Number.isInteger(n)) {
+    const [whole, frac] = String(n).split('.')
+    return `${numberWords(Number(whole))} point ${[...frac].map((d) => ONES[+d]).join(' ')}`
+  }
+  if (n === 0) return 'zero'
+  const parts: string[] = []
+  let rest = n
+  for (const [size, name] of SCALES) {
+    if (rest >= size) {
+      parts.push(`${below1000(Math.floor(rest / size))} ${name}`)
+      rest %= size
+    }
+  }
+  if (rest) parts.push(below1000(rest))
+  return parts.join(' ')
+}
+
+const ORDINAL: Record<string, string> = { one: 'first', two: 'second', three: 'third', five: 'fifth', eight: 'eighth', nine: 'ninth', twelve: 'twelfth' }
+
+export function ordinalWords(n: number): string {
+  const words = numberWords(n)
+  const m = words.match(/(\w+)$/)!
+  const last = m[1]
+  const ord = ORDINAL[last] ?? (last.endsWith('y') ? `${last.slice(0, -1)}ieth` : `${last}th`)
+  return words.slice(0, m.index) + ord
+}
+
+// 2026 → "twenty twenty-six", 2005 → "two thousand five", 1990 → "nineteen ninety".
+function yearWords(y: number): string {
+  const hi = Math.floor(y / 100)
+  const lo = y % 100
+  if (lo === 0) return y % 1000 === 0 ? numberWords(y) : `${numberWords(hi)} hundred`
+  if (hi === 20 && lo < 10) return numberWords(y)
+  return `${numberWords(hi)} ${lo < 10 ? `oh ${ONES[lo]}` : below100(lo)}`
+}
+
+const MONTH = '(January|February|March|April|May|June|July|August|September|October|November|December)'
+
+function inWords(text: string): string {
+  return (
+    text
+      // Dates: "17 to 30 September" → "September seventeenth to thirtieth", "1 November" → "November first".
+      .replace(new RegExp(String.raw`\b(\d{1,2}) to (\d{1,2}) ${MONTH}\b`, 'g'), (_, a, b, m) => `${m} ${ordinalWords(+a)} to ${ordinalWords(+b)}`)
+      .replace(new RegExp(String.raw`\b(\d{1,2}) ${MONTH}\b`, 'g'), (_, d, m) => `${m} ${ordinalWords(+d)}`)
+      .replace(new RegExp(String.raw`\b${MONTH} (\d{1,2})(?:st|nd|rd|th)?\b(?!,?\s?\d{3})`, 'g'), (all, m, d) => (+d <= 31 ? `${m} ${ordinalWords(+d)}` : all))
+      .replace(/\b(\d+)(st|nd|rd|th)\b/g, (_, d) => ordinalWords(+d))
+      // Clock times: 22:30 → "twenty-two thirty", 9:05 → "nine oh five".
+      .replace(/\b(\d{1,2}):(\d{2})\b/g, (_, h, m) => `${numberWords(+h)}${+m === 0 ? " o'clock" : ` ${+m < 10 ? `oh ${ONES[+m]}` : below100(+m)}`}`)
+      // Years: a lone 1900–2099 that is not an amount.
+      .replace(/\b(19\d{2}|20\d{2})\b(?!\s*(?:euros?|percent|times|purchases|payments))/g, (_, y) => yearWords(+y))
+      // Everything else: "4,700", "1.5", "99".
+      .replace(/\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?/g, (n) => numberWords(Number(n.replace(/,/g, ''))))
+  )
 }
