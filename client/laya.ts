@@ -33,6 +33,18 @@ const MAX_GOAL_LENGTH = 300
 const MAX_CACHED_ANSWERS = 5000
 const answers = new Map<string, Promise<unknown>>()
 
+// Transient failures are retried after these pauses; others fail at once.
+const RETRY_DELAYS_MS = [300, 1000, 2500]
+const RETRY_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504])
+const MAX_RETRY_DELAY_MS = 5000
+
+// Waits as long as the API asks (Retry-After, in seconds) when it says so, within reason.
+function retryDelay(res: Response | null, fallback: number) {
+  const seconds = Number(res?.headers.get('retry-after'))
+  const base = Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, MAX_RETRY_DELAY_MS) : fallback
+  return base + Math.random() * 200 // spread the parallel calls out
+}
+
 // The wording, the state shapes and even the one-letter labels below were
 // picked by measuring the model's answers; change them only with a re-test.
 
@@ -96,18 +108,29 @@ export async function classifyPurchases(
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`
 
   // One /v1/systemone call; the hosted API and the local server share that endpoint.
+  // A round sends many calls at once, and the first round after a quiet spell
+  // (a cold API or serverless instance) tends to lose one of them to a dropped
+  // connection, a 429 or a 5xx; without retries that failed the whole round.
   async function ask(state: unknown, question: object) {
-    let res: Response
-    try {
-      res = await fetch(`${baseUrl}/v1/systemone`, {
-        method: 'POST',
-        headers,
-        // Hosts that serve several models need Laya named; the local server ignores it.
-        body: JSON.stringify({ model: 'english', state, questions: { q: question } }),
-      })
-    } catch {
-      throw new ClassifyError(502, `Could not reach Laya at ${baseUrl}`)
+    let res: Response | null = null
+    for (let attempt = 0; ; attempt++) {
+      try {
+        res = await fetch(`${baseUrl}/v1/systemone`, {
+          method: 'POST',
+          headers,
+          // Hosts that serve several models need Laya named; the local server ignores it.
+          body: JSON.stringify({ model: 'english', state, questions: { q: question } }),
+        })
+      } catch {
+        res = null
+      }
+      if ((res === null || RETRY_STATUSES.has(res.status)) && attempt < RETRY_DELAYS_MS.length) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelay(res, RETRY_DELAYS_MS[attempt])))
+        continue
+      }
+      break
     }
+    if (!res) throw new ClassifyError(502, `Could not reach Laya at ${baseUrl}`)
     if (!res.ok) throw new ClassifyError(502, `Laya request failed (${res.status})`)
     let answer: unknown
     try {

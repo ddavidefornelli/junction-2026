@@ -71,3 +71,31 @@ test('asks Laya each question once and retries after a failure', async () => {
   await classifyPurchases(config, 'Save for a home', kinds)
   assert.equal(calls, 5) // new goal: the kind of spending is already known
 })
+
+test('retries a call that fails for a moment, so the first round succeeds', async () => {
+  const failures = { network: 1, status: 1 }
+  let calls = 0
+  globalThis.fetch = async (_url, init) => {
+    calls++
+    const q = JSON.parse(init.body).questions.q
+    if (q.type === 'choice' && failures.network-- > 0) throw new TypeError('fetch failed')
+    if (q.type === 'noul' && failures.status-- > 0) return new Response('', { status: 503, headers: { 'Retry-After': '0' } })
+    return new Response(JSON.stringify({ answers: { q: q.type === 'choice' ? { choice: 'd' } : { noul: 0.9 } } }), { status: 200 })
+  }
+  const config = { baseUrl: 'http://retry.test' }
+  assert.deepEqual(await classifyPurchases(config, 'Spend less', [{ category: 'travel', transaction_type: 'card' }]), ['bad'])
+  assert.equal(calls, 5) // three questions, two of them asked twice
+})
+
+test('does not retry a request Laya rejects', async () => {
+  let calls = 0
+  globalThis.fetch = async () => {
+    calls++
+    return new Response('', { status: 401 })
+  }
+  await assert.rejects(
+    classifyPurchases({ baseUrl: 'http://reject.test' }, 'Save', [{ category: null, transaction_type: null }]),
+    (e) => e instanceof ClassifyError && /401/.test(e.message),
+  )
+  assert.equal(calls, 1)
+})
