@@ -1,5 +1,3 @@
-import { ClassifyError, classifyPurchases, type LayaConfig } from '../laya'
-
 type Request = {
   method?: string
   url?: string
@@ -9,9 +7,8 @@ type Request = {
 type Response = {
   status(code: number): Response
   setHeader(name: string, value: string): void
-  send(body: string): void
   json(body: unknown): void
-  end(): void
+  end(body?: string): void
 }
 
 const TABLES = new Set(['customers', 'transactions', 'mortgage_applications'])
@@ -24,8 +21,11 @@ export default async function handler(req: Request, res: Response) {
     if (req.method !== 'POST') return res.status(405).end()
 
     try {
+      // Load the classifier only for this route. Keeping the bank data routes
+      // independent avoids making their startup depend on classifier bundling.
+      const { ClassifyError, classifyPurchases } = await import('../laya')
       const { goal, purchases } = (req.body ?? {}) as { goal?: unknown; purchases?: unknown }
-      const config: LayaConfig = {
+      const config = {
         baseUrl: process.env.LAYA_BASE_URL,
         apiKey: process.env.LAYA_API_KEY,
       }
@@ -53,7 +53,8 @@ export default async function handler(req: Request, res: Response) {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
     })
     res.setHeader('Content-Type', 'application/json')
-    return res.status(upstream.status).send(await upstream.text())
+    res.status(upstream.status)
+    return res.end(await upstream.text())
   } catch (error) {
     console.error('[api] Supabase request failed', { resource, error })
     return res.status(502).json({ error: 'Could not reach Supabase' })
