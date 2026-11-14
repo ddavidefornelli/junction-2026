@@ -71,6 +71,21 @@ export default async function handler(req: Request, res: Response) {
     }
   }
 
+  if (resource === 'mortgage-steps') {
+    if (req.method !== 'POST') return res.status(405).end()
+
+    try {
+      const { mortgageSteps } = await import('../chat.js')
+      const { context } = (req.body ?? {}) as { context?: unknown }
+      const config = { apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL }
+      return res.json(await mortgageSteps(config, context))
+    } catch (error) {
+      const { status, message } = failure(error)
+      console.error('[api/mortgage-steps] Request failed', { status, message, error })
+      return res.status(status).json({ error: message })
+    }
+  }
+
   if (!TABLES.has(resource ?? '')) return res.status(404).end()
   if (req.method !== 'GET') return res.status(405).end()
 

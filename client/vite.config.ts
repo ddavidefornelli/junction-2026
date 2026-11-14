@@ -3,7 +3,7 @@ import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { ClassifyError, classifyPurchases, type LayaConfig } from './laya'
-import { ChatError, chatReply, type ChatConfig } from './chat'
+import { ChatError, chatReply, mortgageSteps, type ChatConfig } from './chat'
 
 const TABLES = ['customers', 'transactions', 'mortgage_applications']
 
@@ -11,6 +11,7 @@ const TABLES = ['customers', 'transactions', 'mortgage_applications']
 //   GET  /api/<table>?<postgrest query>   read-only Supabase access
 //   POST /api/classify {goal, purchases}  good / bad / neutral verdicts from Laya (laya.ts)
 //   POST /api/chat {context, messages}    the assistant's reply from OpenAI, streamed as plain text (chat.ts)
+//   POST /api/mortgage-steps {context}    AI-written next steps towards the mortgage, as JSON (chat.ts)
 // The dev server calls Supabase, Laya and OpenAI itself with keys from server/.env
 // (or client/.env for Laya); the keys never reach the browser.
 function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig): Plugin {
@@ -19,12 +20,13 @@ function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig): 
     configureServer(server) {
       server.middlewares.use('/api', async (req, res) => {
         const { pathname, search } = new URL(req.url ?? '/', 'http://localhost')
-        if (req.method === 'POST' && (pathname === '/classify' || pathname === '/chat')) {
+        if (req.method === 'POST' && (pathname === '/classify' || pathname === '/chat' || pathname === '/mortgage-steps')) {
           res.setHeader('Content-Type', 'application/json')
           try {
             let raw = ''
             for await (const chunk of req) raw += chunk
             const body = JSON.parse(raw)
+            if (pathname === '/mortgage-steps') return res.end(JSON.stringify(await mortgageSteps(chat, body.context)))
             if (pathname === '/chat') {
               const reply = await chatReply(chat, body.context, body.messages)
               res.setHeader('Content-Type', 'text/plain; charset=utf-8')

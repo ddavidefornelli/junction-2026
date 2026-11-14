@@ -21,6 +21,11 @@ export type MortgageEvent = {
   event_timestamp: string
   event_type: string
   note: string | null
+  expense_type: string | null
+  expense_amount: number | null
+  collateral_type: string | null
+  collateral_value: number | null
+  collateral_status: string | null
 }
 
 export type Mortgage = {
@@ -98,7 +103,7 @@ export async function getWellnessTransactions(customerId: string): Promise<Trans
 export async function getMortgage(customerId: string): Promise<Mortgage | null> {
   const rows = await get<Mortgage[]>('mortgage_applications', {
     customer_id: `eq.${customerId}`,
-    select: '*,mortgage_events(id,event_timestamp,event_type,note)',
+    select: '*,mortgage_events(id,event_timestamp,event_type,note,expense_type,expense_amount,collateral_type,collateral_value,collateral_status)',
     'mortgage_events.order': 'event_timestamp.desc',
   })
   return rows[0] ?? null

@@ -30,6 +30,9 @@ export type Plan = {
   maxSaving: number // the most the plan can set aside a month: usual saving plus every cut at its maximum
   reachable: boolean // false when the goal needs more than maxSaving
   categories: CategoryBudget[] // budgeted categories, biggest first
+  daysLeft: number // days left in `month`, counting the day of the latest transaction
+  dailyEssentials: number // usual daily spend on groceries and transport: the floor of the daily budget
+  dailyBudget: number // dailyEssentials plus what is left of this month's budgets, spread over daysLeft
   overBudget: Set<string> // txId of each purchase made after its budget ran out
 }
 
@@ -76,12 +79,14 @@ export function makePlan(
   const usual = new Map<string, number>()
   const flex = new Map<string, number>()
   let net = 0
+  let essentials = 0 // usual monthly spend on everyday essentials, which are never cut
   for (const tx of all) {
     if (!baseline.has(monthOf(tx))) continue
     // Money moved into savings ("good") leaves the account but is not spent.
     if (verdictOf(tx) !== 'good') net += tx.tx_amount_eur
     if (tx.tx_amount_eur >= 0 || verdictOf(tx) === 'good') continue
     const line = lineOf(tx)
+    if (line && (FOOD.test(line) || TRANSPORT.test(line))) essentials -= tx.tx_amount_eur / baseline.size
     const share = line
       ? (flex.get(line) ?? kindOf(tx)?.cut ?? maxCut(line, verdictOf(tx) === 'bad'))
       : 0
@@ -122,20 +127,31 @@ export function makePlan(
     if (total > budget) overBudget.add(txId(tx))
   }
 
+  const categories = [...usual]
+    .map(([category, amount]) => ({
+      category,
+      usual: amount,
+      budget: budgets.get(category)!,
+      spent: spent.get(`${month}|${category}`) ?? 0,
+    }))
+    .sort((a, b) => b.usual - a.usual)
+  // "Today" is the latest transaction, so the days left match the spending shown.
+  const [y, m, d] = all[all.length - 1].tx_date.slice(0, 10).split('-').map(Number)
+  const daysInMonth = new Date(y, m, 0).getDate()
+  const daysLeft = daysInMonth - d + 1
+  const remaining = categories.reduce((total, c) => total + c.budget - c.spent, 0)
+  const dailyEssentials = essentials / daysInMonth
+
   return {
     month,
+    daysLeft,
+    dailyEssentials,
+    dailyBudget: dailyEssentials + Math.max(0, remaining) / daysLeft,
     usualSaving,
     requiredSaving,
     maxSaving: usualSaving + capacity,
     reachable,
     overBudget,
-    categories: [...usual]
-      .map(([category, amount]) => ({
-        category,
-        usual: amount,
-        budget: budgets.get(category)!,
-        spent: spent.get(`${month}|${category}`) ?? 0,
-      }))
-      .sort((a, b) => b.usual - a.usual),
+    categories,
   }
 }

@@ -2,8 +2,10 @@
 // model answers from, and the call to /api/chat (see ../chat.ts).
 
 import type { Mortgage, Transaction } from './api'
+import { leaks, TRIM, type Baskets } from './baskets'
 import { goalStatement, type GoalProfile } from './goal'
 import { kindOf, suggestions } from './mcc'
+import { mortgageFacts, mortgageLines } from './mortgage'
 import type { Plan } from './plan'
 import type { Wellness } from './wellness'
 
@@ -16,7 +18,6 @@ const SENT_MESSAGES = 12 // the model sees the end of a long conversation
 
 const eur = (n: number | null) => (n == null ? 'unknown' : `${Math.round(n)} €`)
 const pct = (n: number | null) => (n == null ? 'unknown' : `${Math.round(n * 100)}%`)
-const words = (s: string | null) => (s ?? 'unknown').replace(/_/g, ' ')
 
 // Everything the app knows about the customer, as plain text. Figures are the
 // ones shown on screen, so the assistant and the app never disagree.
@@ -28,6 +29,7 @@ export function buildContext(d: {
   goal: GoalProfile | null
   plan: Plan | null
   mortgage: Mortgage | null
+  baskets: Baskets | null
 }): string {
   const out: string[] = [`Today: ${new Date().toISOString().slice(0, 10)}`]
   if (d.balance !== null) out.push(`Current account balance: ${eur(d.balance)}`)
@@ -73,6 +75,22 @@ export function buildContext(d: {
       const spent = [...m.spent].sort((a, b) => b[1] - a[1]).map(([c, v]) => `${c} ${eur(v)}`)
       out.push(`- ${month}: ${spent.join(', ') || 'nothing'}`)
     }
+  }
+
+  const b = d.baskets
+  if (b) {
+    const line = (l: { name: string; monthly: number; purchases: number }) => `${l.name} ${eur(l.monthly)} (${l.purchases.toFixed(1)} purchases)`
+    const basket = (title: string, x: Baskets['baskets']['fixed']) =>
+      `- ${title}: ${eur(x.monthly)} a month, ${pct(x.share)} of spending${b.income > 0 ? `, ${pct(x.monthly / b.income)} of income` : ''}; by month ${x.byMonth.map((v) => eur(v)).join(', ')}; lines: ${x.lines.map(line).join(', ')}`
+    out.push(
+      '',
+      `Spending in three baskets (shown to the customer as "Where your money goes"), monthly averages over ${b.months.length} full month(s), ${b.months[0]} to ${b.months[b.months.length - 1]}. Income averages ${eur(b.income)} a month; spending ${eur(b.spending)}.`,
+      basket('1. "Must pay every month" (rent, utilities, groceries, getting around)', b.baskets.fixed),
+      basket('2. "Must pay sometimes" (health care, home and appliances)', b.baskets.irregular),
+      ...(b.peak ? [`  Most expensive irregular month: ${b.peak.month}, ${eur(b.peak.amount)}. Setting aside the monthly average covers months like it.`] : []),
+      basket('3. "Fun extras", the spending that slips through your fingers (eating out, fun, shopping, travel, taxis, convenience stores)', b.baskets.everyday),
+      `  Bought most often: ${leaks(b).map(line).join(', ')}. Spending ${pct(TRIM)} less on fun extras would free ${eur(b.baskets.everyday.monthly * TRIM)} a month, ${eur(b.baskets.everyday.monthly * TRIM * 12)} a year.`,
+    )
   }
 
   out.push('', d.goal ? `Goal for ${d.goal.year}: ${goalStatement(d.goal)}` : 'The customer has not set a goal yet (they can, on the overview page).')
@@ -127,16 +145,7 @@ export function buildContext(d: {
     }
   }
 
-  const m = d.mortgage
-  if (m) {
-    out.push(
-      '',
-      'Mortgage application:',
-      `- Decision: ${words(m.final_decision)}${m.rejection_reason ? ` (${words(m.rejection_reason)})` : ''}`,
-      `- Loan ${eur(m.final_requested_loan_eur)} for a property of ${eur(m.final_property_price_eur)}; equity ${eur(m.final_equity_amount_eur)}; loan to value ${pct(m.final_loan_to_value)}`,
-      `- Required monthly income: ${eur(m.required_monthly_income_eur)}`,
-    )
-  }
+  if (d.mortgage) out.push('', ...mortgageLines(d.mortgage, mortgageFacts(d.mortgage, d.allTxs)))
   return out.join('\n')
 }
 

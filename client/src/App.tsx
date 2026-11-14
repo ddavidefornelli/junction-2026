@@ -17,13 +17,31 @@ import { GoalForm } from './GoalForm'
 import { deadline, goalLabel, goalStatement, loadGoalProfile, monthYear, saveGoalProfile, type GoalProfile } from './goal'
 import { makePlan, txId, type Plan } from './plan'
 import { kindOf, suggestions, type Suggestion } from './mcc'
+import { makeBaskets, type Baskets } from './baskets'
+import { BasketsCard } from './BasketsCard'
 import { Chat } from './Chat'
 import { WalterAvatar } from './WalterAvatar'
 import { ChatDialog } from './ChatDialog'
 import { WellnessApple } from './WellnessApple'
 import { buildContext, type ChatMessage } from './assistant'
+import { AnalysisSteps, useStagedProgress } from './Analysis'
+import { APPROVED_COLLATERAL_COVER, APPROVED_EQUITY_SHARE, getMortgageSteps, mortgageFacts, type MortgageFacts, type MortgageStep } from './mortgage'
+
+const PLAN_STEPS = [
+  'Grouping your spending into categories',
+  'Asking Laya which purchases help your goal',
+  'Setting a monthly budget for each category',
+  'Checking the plan is within reach',
+] as const
 
 const SESSION_KEY = 'customerId'
+
+const STEPS_ANALYSIS = [
+  'Reading your mortgage application',
+  'Looking at where your money goes, place by place',
+  'Comparing with applications that were approved',
+  'Writing your next steps',
+] as const
 
 export default function App() {
   const [customerId, setCustomerId] = useState(() => sessionStorage.getItem(SESSION_KEY))
@@ -173,16 +191,51 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
     () => (goal && allTxs && currentVerdicts ? makePlan(goal, allTxs, currentVerdicts) : null),
     [goal, allTxs, currentVerdicts],
   )
+  // The plan is revealed only after a short, visible analysis; a retry runs it again.
+  const [planAttempt, setPlanAttempt] = useState(0)
+  const planError = classifyError?.goal === goalText ? classifyError.message : null
+  const planAnalysis = useStagedProgress(
+    PLAN_STEPS.length,
+    Boolean(allTxs && currentVerdicts) || planError !== null || wellnessError,
+    `${goalText}|${planAttempt}`,
+  )
+  const planStep = goal && !planAnalysis.done ? planAnalysis.step : null
   const tips = useMemo(() => (allTxs ? suggestions(allTxs, plan ? !plan.reachable : false) : []), [allTxs, plan])
+  const baskets = useMemo(() => (allTxs ? makeBaskets(allTxs) : null), [allTxs])
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   // What the assistant knows: the figures on screen. Null until the full history has loaded (or failed to).
   const chatContext = useMemo(
     () =>
       allTxs || wellnessError
-        ? buildContext({ balance: txs?.[0]?.balance_after_eur ?? null, wellness, score: wellness ? visibleWellnessScore(wellness, answers) : { value: null, provisional: false }, allTxs, goal, plan, mortgage })
+        ? buildContext({ balance: txs?.[0]?.balance_after_eur ?? null, wellness, score: wellness ? visibleWellnessScore(wellness, answers) : { value: null, provisional: false }, allTxs, goal, plan, mortgage, baskets })
         : null,
-    [txs, wellness, answers, wellnessError, allTxs, goal, plan, mortgage],
+    [txs, wellness, answers, wellnessError, allTxs, goal, plan, mortgage, baskets],
   )
+  // AI-written next steps on the Loan tab: asked once per customer, kept for the session.
+  const stepsKey = `mortgage-steps:${customerId}`
+  const [steps, setSteps] = useState<MortgageStep[] | null>(() => {
+    try { return JSON.parse(sessionStorage.getItem(stepsKey) ?? 'null') } catch { return null }
+  })
+  const [stepsError, setStepsError] = useState<string | null>(null)
+  const [stepsAttempt, setStepsAttempt] = useState(0)
+  useEffect(() => {
+    if (view !== 'loan' || !mortgage || !chatContext || steps || stepsError) return
+    let stale = false
+    getMortgageSteps(chatContext)
+      .then((list) => {
+        if (stale) return
+        setSteps(list)
+        try { sessionStorage.setItem(stepsKey, JSON.stringify(list)) } catch { /* private browsing */ }
+      })
+      .catch((e) => !stale && setStepsError(e instanceof Error ? e.message : 'Unknown error'))
+    return () => { stale = true }
+  }, [view, mortgage, chatContext, steps, stepsError, stepsKey, stepsAttempt])
+  // The checking steps take the time the answer needs; writing is a short last beat.
+  const stepsAnalysis = useStagedProgress(STEPS_ANALYSIS.length, steps !== null || stepsError !== null, stepsAttempt, {
+    stepMs: 4500,
+    holdAt: STEPS_ANALYSIS.length - 2,
+  })
+  const mortgageInfo = useMemo(() => (mortgage && allTxs ? mortgageFacts(mortgage, allTxs) : null), [mortgage, allTxs])
   const tagOf = useCallback(
     (tx: Transaction): Tag => {
       if (!currentVerdicts) return undefined
@@ -210,7 +263,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   }, [customerId])
 
   useEffect(() => {
-    if ((view !== 'wellness' && view !== 'overview' && view !== 'score-details') || wellness || wellnessError) return
+    if ((view !== 'wellness' && view !== 'overview' && view !== 'score-details' && view !== 'loan') || wellness || wellnessError) return
     let stale = false
     getWellnessTransactions(customerId)
       .then((rows) => {
@@ -274,12 +327,6 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
       </nav>
 
       {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
-      {classifyError?.goal === goalText && (
-        <p role="alert" className="mb-4 text-sm text-red-700">
-          Could not classify purchases: {classifyError.message}.{' '}
-          <button className="underline" onClick={() => setClassifyError(null)}>Retry</button>
-        </p>
-      )}
 
       {txs === null ? (
         !error && <p className="text-sm text-muted">Loading…</p>
@@ -293,6 +340,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           }}
           plan={plan}
           tips={tips}
+          baskets={baskets}
           savingRange={savingRange}
           chat={
             <Chat
@@ -308,6 +356,12 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           answers={answers}
           wellnessLoading={wellnessLoading}
           wellnessError={wellnessError}
+          planStep={planStep}
+          planError={planError}
+          onRetryPlan={() => {
+            setClassifyError(null)
+            setPlanAttempt((n) => n + 1)
+          }}
           onShowWellness={() => setView('score-details')}
           onShowAll={() => setView('transactions')}
         />
@@ -343,7 +397,26 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           <FinancialWellness data={wellness} answers={answers} onAnswers={saveAnswers} />
         )
       ) : (
-        mortgage && <Loan mortgage={mortgage} />
+        mortgage && (
+          <Loan
+            mortgage={mortgage}
+            nextSteps={
+              <NextSteps
+                facts={mortgageInfo}
+                steps={stepsAnalysis.done ? steps : null}
+                step={stepsAnalysis.step}
+                error={stepsAnalysis.done ? stepsError : null}
+                loadError={wellnessError}
+                onRetry={() => {
+                  try { sessionStorage.removeItem(stepsKey) } catch { /* private browsing */ }
+                  setSteps(null)
+                  setStepsError(null)
+                  setStepsAttempt((n) => n + 1)
+                }}
+              />
+            }
+          />
+        )
       )}
     </div>
   )
@@ -375,6 +448,7 @@ function Overview({
   onSaveGoal,
   plan,
   tips,
+  baskets,
   savingRange,
   chat,
   tagOf,
@@ -383,6 +457,9 @@ function Overview({
   answers,
   wellnessLoading,
   wellnessError,
+  planStep,
+  planError,
+  onRetryPlan,
   onShowWellness,
   onShowAll,
 }: {
@@ -391,6 +468,7 @@ function Overview({
   onSaveGoal: (profile: GoalProfile) => void
   plan: Plan | null
   tips: Suggestion[]
+  baskets: Baskets | null
   savingRange: (draft: GoalProfile) => Promise<{ usual: number; max: number } | null>
   chat: ReactNode
   tagOf: (tx: Transaction) => Tag
@@ -399,6 +477,9 @@ function Overview({
   answers: WellnessAnswers
   wellnessLoading: boolean
   wellnessError: boolean
+  planStep: number | null
+  planError: string | null
+  onRetryPlan: () => void
   onShowWellness: () => void
   onShowAll: () => void
 }) {
@@ -443,21 +524,24 @@ function Overview({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
-          <div className="flex h-full min-h-40 flex-col justify-between p-5">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h2 className="font-medium">Financial score</h2>
-                <p className="mt-3 text-3xl font-semibold text-emerald-900">
+          <div className="flex h-full min-h-40 flex-col p-5">
+            <h2 className="border-b border-line pb-3 font-medium">Financial score</h2>
+            <div className="my-4 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-3xl font-semibold leading-none text-emerald-900">
                   {score === null ? '—' : `${score} / 100`}
                 </p>
+                <p className="mt-2 text-sm text-muted">
+                  {displayScore.provisional ? 'Preliminary · account activity only.' : score !== null ? scoreDescription(score) : wellnessError ? 'Score unavailable' : wellnessLoading ? 'Calculating…' : 'Not enough account activity to calculate a score.'}
+                </p>
               </div>
-              <WellnessApple stage={score === null ? null : Math.min(4, Math.floor(score / 20))} className="size-20 shrink-0" />
+              <WellnessApple stage={score === null ? null : Math.min(4, Math.floor(score / 20))} className="size-16 shrink-0" />
             </div>
-            <p className="mt-2 text-sm text-muted">
-              {displayScore.provisional ? 'Preliminary · account activity only.' : score !== null ? scoreDescription(score) : wellnessError ? 'Score unavailable' : wellnessLoading ? 'Calculating…' : 'Not enough account activity to calculate a score.'}
-            </p>
-            <button onClick={onShowWellness} className="mt-4 self-start text-sm font-medium text-emerald-800 underline underline-offset-4">
-              See details <span aria-hidden="true">↗</span>
+            <button
+              onClick={onShowWellness}
+              className="mt-auto flex w-full items-center justify-center gap-1.5 rounded-md border border-line px-3 py-2.5 text-sm font-medium hover:bg-paper"
+            >
+              See details <span aria-hidden="true">→</span>
             </button>
           </div>
         </Card>
@@ -477,14 +561,50 @@ function Overview({
               onClick={() => setChatOpen(true)}
               className="mt-auto flex w-full items-center justify-center gap-2 rounded-md bg-ink px-3 py-2.5 text-sm font-medium text-white hover:bg-ink/90"
             >
-              <WalterAvatar className="h-6 w-6" />
               Talk with our AI assistant
             </button>
           </div>
         </Card>
       </div>
 
-      {goal && plan && <PlanCard goal={goal} plan={plan} />}
+      {baskets && <BasketsCard data={baskets} />}
+
+      {goal && planStep !== null ? (
+        <Card>
+          <div className="p-5">
+            <AnalysisSteps title="Building your plan" steps={PLAN_STEPS} step={planStep} />
+          </div>
+        </Card>
+      ) : (
+        goal && (
+          <div className="animate-fade-up">
+            {plan ? (
+              <PlanCard goal={goal} plan={plan} />
+            ) : (
+              <Card>
+                <div className="p-5">
+                  <h2 className="font-medium">Your plan</h2>
+                  {planError ? (
+                    <>
+                      <p role="alert" className="mt-2 text-sm">Walter could not build your plan right now.</p>
+                      <p className="mt-1 text-xs text-muted">{planError}</p>
+                      <button onClick={onRetryPlan} className="mt-3 rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-paper">
+                        Try again
+                      </button>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm text-muted">
+                      {wellnessError
+                        ? 'Your transactions could not be loaded, so there is no plan yet.'
+                        : 'A plan needs at least one full month of account history before this one. Check back next month.'}
+                    </p>
+                  )}
+                </div>
+              </Card>
+            )}
+          </div>
+        )
+      )}
 
       {tips.length > 0 && <TipsCard tips={tips} />}
 
@@ -523,6 +643,8 @@ function Overview({
 function PlanCard({ goal, plan }: { goal: GoalProfile; plan: Plan }) {
   const by = deadline(goal)
   const [year, month] = plan.month.split('-')
+  // Rounded to cents, so float leftovers never show as "0,00 €" instead of "Used up".
+  const flexibleDaily = Math.round((plan.dailyBudget - plan.dailyEssentials) * 100) / 100
   return (
     <Card>
       <div className="p-5">
@@ -542,6 +664,27 @@ function PlanCard({ goal, plan }: { goal: GoalProfile; plan: Plan }) {
         )}
         {plan.categories.length > 0 && (
           <>
+            <div className="mt-4 rounded-md bg-paper p-4">
+              <p className="text-sm text-muted">Daily budget</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight">
+                {eur(plan.dailyBudget)} <span className="text-sm font-normal text-muted">a day</span>
+              </p>
+              <dl className="mt-3 space-y-1.5 border-t border-line pt-3 text-sm">
+                <div className="flex justify-between gap-4">
+                  <dt>Essentials <span className="text-muted">· groceries, transport</span></dt>
+                  <dd className="shrink-0">{eur(plan.dailyEssentials)}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt>Everything else</dt>
+                  <dd className={`shrink-0 ${flexibleDaily > 0 ? '' : 'text-amber-900'}`}>{flexibleDaily > 0 ? eur(flexibleDaily) : 'Used up'}</dd>
+                </div>
+              </dl>
+              <p className="mt-2 text-xs text-muted">
+                {flexibleDaily > 0
+                  ? `Essentials are what you usually spend a day. The rest is what is left of this month's budgets, over the ${plan.daysLeft === 1 ? 'last day' : `${plan.daysLeft} days left`} of ${Number(month)}/${year}.`
+                  : `This month's budgets are used up, so only essentials are left until they start again next month.`}
+              </p>
+            </div>
             <p className="mt-4 text-sm text-muted">Monthly budgets · spent in {Number(month)}/{year}</p>
             <ul className="mt-1">
               {plan.categories.map((c) => {
@@ -1009,7 +1152,84 @@ function Transactions({
   )
 }
 
-function Loan({ mortgage: m }: { mortgage: Mortgage }) {
+// The way to the mortgage: for a rejected application, how far it is from the
+// approved ones; then the AI-written steps, from the customer's own spending.
+function NextSteps({ facts: f, steps, step, error, loadError, onRetry }: {
+  facts: MortgageFacts | null
+  steps: MortgageStep[] | null
+  step: number
+  error: string | null
+  loadError: boolean
+  onRetry: () => void
+}) {
+  const figures: [string, string][] = f
+    ? [
+        ...(f.rejected
+          ? ([
+              ['More equity needed', f.equityGap ? eur(f.equityGap) : 'None'],
+              ['More collateral needed', f.collateralGap ? eur(f.collateralGap) : 'None'],
+            ] as [string, string][])
+          : ([['One-off costs to cover', eur(f.oneOffCosts.reduce((a, c) => a + c.amount, 0))]] as [string, string][])),
+        ['Saved and invested so far', eur(f.savedTotal)],
+        ['Usually left over a month', eur(f.monthlySaving)],
+      ]
+    : []
+
+  return (
+    <Card>
+      <div className="p-5">
+        <h2 className="font-medium">{f?.rejected === false ? 'Your next steps to buying' : 'What it would take to get the loan'}</h2>
+        <p className="mt-1 text-sm text-muted">Written by Walter from your application and where your money goes.</p>
+
+        {figures.length > 0 && (
+          <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {figures.map(([name, value]) => (
+              <div key={name} className="rounded-md bg-paper px-3 py-2">
+                <dt className="text-xs text-muted">{name}</dt>
+                <dd className="mt-0.5 font-medium">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+
+        <div className="mt-5">
+          {loadError ? (
+            <p className="text-sm text-red-700">Could not load your transactions, so there is nothing to base the steps on.</p>
+          ) : error ? (
+            <div className="text-sm text-red-700">
+              <p>Could not write your next steps: {error}</p>
+              <button className="mt-2 underline" onClick={onRetry}>Retry</button>
+            </div>
+          ) : steps ? (
+            <ol>
+              {steps.map((s, i) => (
+                <li key={s.title} className="flex gap-3 border-b border-line py-3 last:border-0">
+                  <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-medium text-white">{i + 1}</span>
+                  <div className="min-w-0 flex-1 text-sm">
+                    <p className="font-medium">{s.title}</p>
+                    <p className="mt-1 text-muted">{s.text}</p>
+                  </div>
+                  {s.figure && <p className="shrink-0 text-right text-sm font-medium">{s.figure}</p>}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <AnalysisSteps title="Working out your next steps" steps={STEPS_ANALYSIS} step={step} />
+          )}
+        </div>
+
+        {f?.rejected && (
+          <p className="mt-3 text-xs text-muted">
+            Gaps are measured against typical approved applications ({percent(APPROVED_EQUITY_SHARE)} equity, collateral worth {percent(APPROVED_COLLATERAL_COVER)} of the loan), not a fixed bank rule. Suggestions are AI-generated; talk to a Pankki advisor before deciding.
+          </p>
+        )}
+        {f && !f.rejected && <p className="mt-3 text-xs text-muted">Suggestions are AI-generated; talk to a Pankki advisor before deciding.</p>}
+      </div>
+    </Card>
+  )
+}
+
+function Loan({ mortgage: m, nextSteps }: { mortgage: Mortgage; nextSteps: ReactNode }) {
   const figures: [string, string][] = [
     ['Loan amount', eur(m.final_requested_loan_eur)],
     ['Property price', eur(m.final_property_price_eur)],
@@ -1038,6 +1258,8 @@ function Loan({ mortgage: m }: { mortgage: Mortgage }) {
           ))}
         </dl>
       </Card>
+
+      {nextSteps}
 
       {m.mortgage_events.length > 0 && (
         <Card>
