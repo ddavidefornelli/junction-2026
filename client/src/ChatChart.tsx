@@ -12,7 +12,8 @@ const value = (v: number, unit: string) => `${number.format(v)}${unit ? ` ${unit
 // "2026-07" -> "7/2026", as months are written elsewhere in the app.
 const label = (s: string) => s.replace(/^(\d{4})-(\d{2})$/, (_, y, m) => `${Number(m)}/${y}`)
 
-export function ChatChart({ chart }: { chart: Chart }) {
+// `onPick`, when given, makes each bar row or point clickable: it gets that row's label.
+export function ChatChart({ chart, onPick }: { chart: Chart; onPick?: (label: string) => void }) {
   return (
     <figure className="rounded-lg border border-line bg-white p-3">
       <figcaption className="text-sm font-medium">{chart.title}</figcaption>
@@ -26,18 +27,33 @@ export function ChatChart({ chart }: { chart: Chart }) {
           ))}
         </ul>
       )}
-      {chart.type === 'line' ? <Lines chart={chart} /> : <Bars chart={chart} />}
+      {chart.type === 'line' ? <Lines chart={chart} onPick={onPick} /> : <Bars chart={chart} onPick={onPick} />}
+      {onPick && (
+        <p className="mt-2 text-[11px] text-muted">
+          Tap a {chart.type === 'line' ? 'point' : 'bar'} to ask Walter about it.
+        </p>
+      )}
     </figure>
   )
 }
 
 // Categories compared: one row each, a thin bar per series with its value at the tip.
-function Bars({ chart }: { chart: Chart }) {
+function Bars({ chart, onPick }: { chart: Chart; onPick?: (label: string) => void }) {
   const max = Math.max(1, ...chart.data.flatMap((d) => d.values))
   return (
-    <dl className="mt-2 space-y-2">
+    <dl className="mt-2 space-y-1">
       {chart.data.map((d) => (
-        <div key={d.label}>
+        <div
+          key={d.label}
+          {...(onPick && {
+            role: 'button',
+            tabIndex: 0,
+            'aria-label': `Ask about ${label(d.label)}`,
+            onClick: () => onPick(d.label),
+            onKeyDown: (e: React.KeyboardEvent) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onPick(d.label)),
+          })}
+          className={`-mx-1.5 rounded px-1.5 py-0.5 ${onPick ? 'cursor-pointer transition-colors hover:bg-paper focus-visible:bg-paper focus-visible:outline-none' : ''}`}
+        >
           <dt className="truncate text-xs text-muted">{label(d.label)}</dt>
           {d.values.map((v, i) => (
             <dd
@@ -60,7 +76,7 @@ function Bars({ chart }: { chart: Chart }) {
 }
 
 // Change over time: one line per series from a zero baseline, the last value written at its end.
-function Lines({ chart }: { chart: Chart }) {
+function Lines({ chart, onPick }: { chart: Chart; onPick?: (label: string) => void }) {
   const W = 320
   const H = 150
   const pad = { top: 14, right: 58, bottom: 20, left: 4 }
@@ -99,9 +115,20 @@ function Lines({ chart }: { chart: Chart }) {
             points={chart.data.map((d, i) => `${x(i)},${y(d.values[s])}`).join(' ')}
           />
           {chart.data.map((d, i) => (
-            <circle key={i} cx={x(i)} cy={y(d.values[s])} r="3" fill={COLORS[s]} stroke="#fff" strokeWidth="1.5">
+            <g key={i} onClick={onPick && (() => onPick(d.label))} className={onPick ? 'group cursor-pointer' : undefined}>
+              {/* a larger invisible target, so the point is easy to tap */}
+              {onPick && <circle cx={x(i)} cy={y(d.values[s])} r="9" fill="transparent" />}
+              <circle
+                cx={x(i)}
+                cy={y(d.values[s])}
+                r="3"
+                fill={COLORS[s]}
+                stroke="#fff"
+                strokeWidth="1.5"
+                className="transition-[r] group-hover:[r:5px]"
+              />
               <title>{`${label(d.label)} · ${name}: ${value(d.values[s], chart.unit)}`}</title>
-            </circle>
+            </g>
           ))}
           <text x={x(n - 1) + 7} y={ends[s] + 3} fontSize="10" fontWeight="600" fill="#0a2540">
             {value(chart.data[n - 1].values[s], chart.unit)}

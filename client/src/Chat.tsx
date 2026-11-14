@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { parseReply, sendChat, type ChatMessage } from './assistant'
+import { parseReply, sendChat, suggestionsOf, type Chart, type ChatMessage } from './assistant'
 import { ChatChart } from './ChatChart'
 
 const BUBBLE = 'w-fit max-w-[90%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm'
+
+// The question asked when a bar or a point of a chart is clicked.
+const followUp = (type: Chart['type'], label: string) =>
+  type === 'line'
+    ? `What happened in ${label.replace(/^(\d{4})-(\d{2})$/, (_, y, m) => `${Number(m)}/${y}`)}?`
+    : `Tell me more about ${label}.`
 
 // The conversation with the assistant. The messages live in the parent so they
 // survive a change of tab; `context` is the summary the assistant answers from
@@ -57,10 +63,12 @@ export function Chat({
   const last = messages[messages.length - 1]
   // The reply so far ends in a chart that is still being written.
   const drawing = last?.role === 'assistant' && last.content.lastIndexOf('<chart>') > last.content.lastIndexOf('</chart>')
+  // Follow-up questions Walter offered with his latest reply, shown as buttons.
+  const suggestions = last?.role === 'assistant' ? suggestionsOf(last.content) : []
   return (
     <div className="mt-auto">
       {messages.length > 0 ? (
-        <div ref={log} aria-live="polite" className="mb-3 max-h-80 space-y-2 overflow-y-auto">
+        <div ref={log} aria-live="polite" className="mb-3 max-h-[60vh] space-y-2 overflow-y-auto">
           {messages.map((m, i) =>
             m.role === 'user' ? (
               <p key={i} className={`ml-auto bg-ink text-white ${BUBBLE}`}>
@@ -74,10 +82,28 @@ export function Chat({
                     {part}
                   </p>
                 ) : (
-                  <ChatChart key={`${i}-${j}`} chart={part} />
+                  <ChatChart
+                    key={`${i}-${j}`}
+                    chart={part}
+                    onPick={busy || context === null ? undefined : (label) => ask(followUp(part.type, label))}
+                  />
                 ),
               )
             ),
+          )}
+          {!busy && suggestions.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {suggestions.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => ask(s)}
+                  disabled={context === null}
+                  className="rounded-full border border-line bg-white px-3 py-1 text-left text-xs hover:border-ink disabled:opacity-50"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           )}
           {busy && (last?.role === 'user' || drawing) && (
             <p className="w-fit rounded-lg bg-paper px-3 py-2 text-sm text-muted">

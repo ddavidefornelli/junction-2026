@@ -172,15 +172,32 @@ function toChart(json: string): Chart | null {
   }
 }
 
+// The follow-up questions at the end of a reply: <suggest>["…","…"]</suggest>
+// (see ../chat.ts). Empty while they are still being written or if they do not parse.
+export function suggestionsOf(reply: string): string[] {
+  const match = reply.match(/<suggest>([\s\S]*?)<\/suggest>/)
+  if (!match) return []
+  try {
+    const list = JSON.parse(match[1])
+    return Array.isArray(list)
+      ? list.filter((s): s is string => typeof s === 'string' && s.trim() !== '').map((s) => s.trim()).slice(0, 3)
+      : []
+  } catch {
+    return []
+  }
+}
+
 // A reply as the pieces to show, in order: text and charts. A chart that is
 // still being written (the reply arrives piece by piece) or that does not
-// parse is left out rather than shown as raw text.
+// parse is left out rather than shown as raw text, and so are the suggestions
+// (shown as buttons instead, see suggestionsOf).
 export function parseReply(reply: string): (string | Chart)[] {
   const parts: (string | Chart)[] = []
   const add = (text: string) => {
     if (text.trim()) parts.push(text.trim())
   }
-  let rest = reply
+  const suggest = reply.indexOf('<suggest>')
+  let rest = suggest < 0 ? reply : reply.slice(0, suggest)
   while (true) {
     const start = rest.indexOf('<chart>')
     if (start < 0) break
@@ -191,7 +208,7 @@ export function parseReply(reply: string): (string | Chart)[] {
     if (chart) parts.push(chart)
     rest = rest.slice(end + 8)
   }
-  add(rest.replace(/<\/?[a-z]{0,5}$/, '')) // a tag cut mid-way
+  add(rest.replace(/<\/?[a-z]{0,7}$/, '')) // a tag cut mid-way
   return parts
 }
 

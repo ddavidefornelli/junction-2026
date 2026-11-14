@@ -19,6 +19,7 @@ import { makePlan, txId, type Plan } from './plan'
 import { kindOf, suggestions, type Suggestion } from './mcc'
 import { Chat } from './Chat'
 import { WalterAvatar } from './WalterAvatar'
+import { ChatDialog } from './ChatDialog'
 import { buildContext, type ChatMessage } from './assistant'
 
 const SESSION_KEY = 'customerId'
@@ -401,6 +402,7 @@ function Overview({
   onShowAll: () => void
 }) {
   const [goalFormOpen, setGoalFormOpen] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
   const latest = txs[0]
   if (!latest) return <p className="text-sm text-muted">No account activity.</p>
   const score = wellness ? wellnessScores(wellness, answers).total : null
@@ -458,7 +460,13 @@ function Overview({
             >
               {goal ? 'Edit goal' : `Set your financial goal for ${year}`}
             </button>
-            {chat}
+            <button
+              onClick={() => setChatOpen(true)}
+              className="mt-auto flex w-full items-center justify-center gap-2 rounded-md bg-ink px-3 py-2.5 text-sm font-medium text-white hover:bg-ink/90"
+            >
+              <WalterAvatar className="h-6 w-6" />
+              Talk with our AI assistant
+            </button>
           </div>
         </Card>
       </div>
@@ -480,6 +488,8 @@ function Overview({
           ))}
         </ul>
       </Card>
+
+      {chatOpen && <ChatDialog onClose={() => setChatOpen(false)}>{chat}</ChatDialog>}
 
       {goalFormOpen && (
         <GoalForm
