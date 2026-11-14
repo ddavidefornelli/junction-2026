@@ -60,7 +60,8 @@ function Login({ onLogin }: { onLogin: (id: string) => void }) {
       const customer = await getCustomer(value)
       if (customer) onLogin(customer.customer_id)
       else setError('Unknown customer ID')
-    } catch {
+    } catch (error) {
+      console.error('[login] Could not look up customer', error)
       setError('Could not reach the bank')
     } finally {
       setBusy(false)

@@ -39,8 +39,25 @@ export type Mortgage = {
 export const PAGE_SIZE = 50
 
 async function get<T>(path: string, params: Record<string, string>): Promise<T> {
-  const res = await fetch(`/api/${path}?${new URLSearchParams(params)}`)
-  if (!res.ok) throw new Error(`Request failed (${res.status})`)
+  const endpoint = `/api/${path}`
+  console.info('[bank api] GET', endpoint)
+  let res: Response
+  try {
+    res = await fetch(`${endpoint}?${new URLSearchParams(params)}`)
+  } catch (error) {
+    console.error('[bank api] Network request failed', { endpoint, error })
+    throw error
+  }
+  console.info('[bank api] Response', { endpoint, status: res.status, ok: res.ok })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    console.error('[bank api] Server returned an error', {
+      endpoint,
+      status: res.status,
+      detail: detail.slice(0, 500),
+    })
+    throw new Error(`Request failed (${res.status})`)
+  }
   return res.json()
 }
 
