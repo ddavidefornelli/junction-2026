@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { Row } from '../ledger'
 import { parseReply, sendChat, suggestionsOf, type Chart, type ChatMessage } from './assistant'
 import { ChatChart } from './ChatChart'
@@ -22,23 +22,28 @@ export function Chat({
   context,
   ledger,
   starters,
+  prompt,
+  onPromptHandled,
 }: {
   messages: ChatMessage[]
   onMessages: (messages: ChatMessage[]) => void
   context: string | null
   ledger: Row[] | null
   starters: string[]
+  prompt: { id: number; text: string } | null
+  onPromptHandled: () => void
 }) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
   const log = useRef<HTMLDivElement>(null)
+  const handledPrompt = useRef<number | null>(null)
 
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight })
   }, [messages, busy])
 
-  async function ask(text: string) {
+  const ask = useCallback(async (text: string) => {
     const question = text.trim()
     if (!question || busy || context === null) return
     // After a failed reply the question is still the last message: ask it again rather than twice.
@@ -58,7 +63,16 @@ export function Chat({
     } finally {
       setBusy(false)
     }
-  }
+  }, [busy, context, ledger, messages, onMessages])
+
+  // Wait for the customer's data, then send the scenario through Walter's normal chat API.
+  // The id guard also prevents StrictMode from sending the same question twice.
+  useEffect(() => {
+    if (!prompt || context === null || handledPrompt.current === prompt.id) return
+    handledPrompt.current = prompt.id
+    onPromptHandled()
+    void ask(prompt.text)
+  }, [prompt, context, ask, onPromptHandled])
 
   function submit(e: FormEvent) {
     e.preventDefault()
