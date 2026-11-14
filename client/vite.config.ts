@@ -3,30 +3,43 @@ import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { ClassifyError, classifyPurchases, type LayaConfig } from './laya'
+import { ChatError, chatReply, type ChatConfig } from './chat'
 
 const TABLES = ['customers', 'transactions', 'mortgage_applications']
 
 // API for the client:
 //   GET  /api/<table>?<postgrest query>   read-only Supabase access
 //   POST /api/classify {goal, purchases}  good / bad / neutral verdicts from Laya (laya.ts)
-// The dev server calls Supabase and Laya itself with the keys from server/.env,
+//   POST /api/chat {context, messages}    the assistant's reply from OpenAI, streamed as plain text (chat.ts)
+// The dev server calls Supabase, Laya and OpenAI itself with the keys from server/.env,
 // so the keys never reach the browser.
-function bankApi(url: string, key: string, laya: LayaConfig): Plugin {
+function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig): Plugin {
   return {
     name: 'bank-api',
     configureServer(server) {
       server.middlewares.use('/api', async (req, res) => {
         const { pathname, search } = new URL(req.url ?? '/', 'http://localhost')
-        if (req.method === 'POST' && pathname === '/classify') {
+        if (req.method === 'POST' && (pathname === '/classify' || pathname === '/chat')) {
           res.setHeader('Content-Type', 'application/json')
           try {
             let raw = ''
             for await (const chunk of req) raw += chunk
-            const { goal, purchases } = JSON.parse(raw)
-            res.end(JSON.stringify(await classifyPurchases(laya, goal, purchases)))
+            const body = JSON.parse(raw)
+            if (pathname === '/chat') {
+              const reply = await chatReply(chat, body.context, body.messages)
+              res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+              try {
+                for await (const text of reply) res.write(text)
+              } catch (e) {
+                console.error('[chat] Reply cut short', e) // the browser gets what was written so far
+              }
+              return res.end()
+            }
+            res.end(JSON.stringify(await classifyPurchases(laya, body.goal, body.purchases)))
           } catch (e) {
-            res.statusCode = e instanceof ClassifyError ? e.status : 400
-            res.end(JSON.stringify({ error: e instanceof ClassifyError ? e.message : 'Bad request' }))
+            const known = e instanceof ClassifyError || e instanceof ChatError
+            res.statusCode = known ? e.status : 400
+            res.end(JSON.stringify({ error: known ? e.message : 'Bad request' }))
           }
           return
         }
@@ -52,15 +65,17 @@ function bankApi(url: string, key: string, laya: LayaConfig): Plugin {
 }
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, path.resolve(import.meta.dirname, '../server'), ['SUPABASE_', 'LAYA_'])
+  const env = loadEnv(mode, path.resolve(import.meta.dirname, '../server'), ['SUPABASE_', 'LAYA_', 'OPENAI_'])
   return {
     plugins: [
       react(),
       tailwindcss(),
-      bankApi(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
-        baseUrl: env.LAYA_BASE_URL,
-        apiKey: env.LAYA_API_KEY,
-      }),
+      bankApi(
+        env.SUPABASE_URL,
+        env.SUPABASE_SERVICE_ROLE_KEY,
+        { baseUrl: env.LAYA_BASE_URL, apiKey: env.LAYA_API_KEY },
+        { apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL },
+      ),
     ],
   }
 })

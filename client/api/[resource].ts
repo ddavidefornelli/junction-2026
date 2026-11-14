@@ -8,6 +8,7 @@ type Response = {
   status(code: number): Response
   setHeader(name: string, value: string): void
   json(body: unknown): void
+  write(chunk: string): void
   end(body?: string): void
 }
 
@@ -34,6 +35,29 @@ export default async function handler(req: Request, res: Response) {
       const status = error instanceof ClassifyError ? error.status : 400
       const message = error instanceof ClassifyError ? error.message : 'Bad request'
       console.error('[api/classify] Request failed', { status, message })
+      return res.status(status).json({ error: message })
+    }
+  }
+
+  if (resource === 'chat') {
+    if (req.method !== 'POST') return res.status(405).end()
+
+    const { ChatError, chatReply } = await import('../chat')
+    try {
+      const { context, messages } = (req.body ?? {}) as { context?: unknown; messages?: unknown }
+      const config = { apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL }
+      const reply = await chatReply(config, context, messages)
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+      try {
+        for await (const text of reply) res.write(text)
+      } catch (error) {
+        console.error('[api/chat] Reply cut short', error) // the browser gets what was written so far
+      }
+      return res.end()
+    } catch (error) {
+      const status = error instanceof ChatError ? error.status : 400
+      const message = error instanceof ChatError ? error.message : 'Bad request'
+      console.error('[api/chat] Request failed', { status, message })
       return res.status(status).json({ error: message })
     }
   }

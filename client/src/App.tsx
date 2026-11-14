@@ -17,6 +17,8 @@ import { GoalForm } from './GoalForm'
 import { deadline, goalLabel, goalStatement, loadGoalProfile, monthYear, saveGoalProfile, type GoalProfile } from './goal'
 import { makePlan, txId, type Plan } from './plan'
 import { kindOf, suggestions, type Suggestion } from './mcc'
+import { Chat } from './Chat'
+import { buildContext, type ChatMessage } from './assistant'
 
 const SESSION_KEY = 'customerId'
 
@@ -158,6 +160,15 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
     [goal, allTxs, currentVerdicts],
   )
   const tips = useMemo(() => (allTxs ? suggestions(allTxs, plan ? !plan.reachable : false) : []), [allTxs, plan])
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  // What the assistant knows: the figures on screen. Null until the full history has loaded (or failed to).
+  const chatContext = useMemo(
+    () =>
+      allTxs || wellnessError
+        ? buildContext({ balance: txs?.[0]?.balance_after_eur ?? null, wellness, allTxs, goal, plan, mortgage })
+        : null,
+    [txs, wellness, wellnessError, allTxs, goal, plan, mortgage],
+  )
   const tagOf = useCallback(
     (tx: Transaction): Tag => {
       if (!currentVerdicts) return undefined
@@ -263,6 +274,14 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           plan={plan}
           tips={tips}
           savingRange={savingRange}
+          chat={
+            <Chat
+              messages={chatMessages}
+              onMessages={setChatMessages}
+              context={chatContext}
+              starters={['How am I doing?', 'Where could I cut back?', goal ? 'Am I on track for my goal?' : 'What should I focus on first?']}
+            />
+          }
           tagOf={tagOf}
           txs={txs}
           wellness={wellness}
@@ -327,6 +346,7 @@ function Overview({
   plan,
   tips,
   savingRange,
+  chat,
   tagOf,
   txs,
   wellness,
@@ -341,6 +361,7 @@ function Overview({
   plan: Plan | null
   tips: Suggestion[]
   savingRange: (draft: GoalProfile) => Promise<{ usual: number; max: number } | null>
+  chat: ReactNode
   tagOf: (tx: Transaction) => Tag
   txs: Transaction[]
   wellness: Wellness | null
@@ -388,7 +409,7 @@ function Overview({
               <span aria-hidden="true" className="flex h-9 w-9 items-center justify-center rounded-full bg-ink text-sm font-semibold text-white">P</span>
               <div>
                 <h2 className="text-sm font-medium">Pankki assistant</h2>
-                <p className="text-xs text-muted">Coming soon</p>
+                <p className="text-xs text-muted">Ask about your finances</p>
               </div>
             </div>
             <div className="my-4 rounded-lg bg-paper p-3 text-sm">
@@ -398,7 +419,7 @@ function Overview({
                   <span className="mt-0.5 block font-medium">{goalStatement(goal)}</span>
                 </>
               ) : (
-                "Hi! Soon you'll be able to ask me about your finances here."
+                'Hi! Ask me how your finances are doing, or what to do next.'
               )}
             </div>
             <button
@@ -407,10 +428,7 @@ function Overview({
             >
               {goal ? 'Edit goal' : `Set your financial goal for ${year}`}
             </button>
-            <div className="mt-auto flex gap-2">
-              <input disabled aria-label="Chat message" placeholder="Ask a question…" className="min-w-0 flex-1 rounded-md border border-line bg-paper px-3 py-2 text-sm placeholder:text-muted" />
-              <button disabled aria-label="Send message" className="rounded-md bg-ink px-3 text-sm text-white opacity-50">Send</button>
-            </div>
+            {chat}
           </div>
         </Card>
       </div>
