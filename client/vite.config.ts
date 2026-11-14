@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { ClassifyError, classifyPurchases, type LayaConfig } from './laya.ts'
 import { ChatError, chatReply, mortgageSteps, type ChatConfig } from './chat.ts'
 import { ScenarioError, whatIfScenarios } from './scenarios.ts'
+import { TtsError, speech, type TtsConfig } from './tts.ts'
 
 const TABLES = ['customers', 'transactions', 'mortgage_applications']
 
@@ -14,21 +15,27 @@ const TABLES = ['customers', 'transactions', 'mortgage_applications']
 //   POST /api/chat {context, messages, ledger}  the assistant's reply from OpenAI, streamed as plain text (chat.ts)
 //   POST /api/mortgage-steps {context}    AI-written next steps towards the mortgage, as JSON (chat.ts)
 //   POST /api/scenarios {context}         Walter's personalised what-if questions, as JSON (scenarios.ts)
-// The dev server calls Supabase, Laya and OpenAI itself with keys from server/.env
+//   POST /api/tts {text}                  Walter's voice from ElevenLabs, as MP3 audio (tts.ts)
+// The dev server calls Supabase, Laya, OpenAI and ElevenLabs itself with keys from server/.env
 // (or client/.env for Laya); the keys never reach the browser.
-function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig): Plugin {
+function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig, tts: TtsConfig): Plugin {
   return {
     name: 'bank-api',
     configureServer(server) {
       server.middlewares.use('/api', async (req, res) => {
         const { pathname, search } = new URL(req.url ?? '/', 'http://localhost')
-        if (req.method === 'POST' && (pathname === '/classify' || pathname === '/chat' || pathname === '/mortgage-steps' || pathname === '/scenarios')) {
+        if (req.method === 'POST' && (pathname === '/classify' || pathname === '/chat' || pathname === '/mortgage-steps' || pathname === '/scenarios' || pathname === '/tts')) {
           res.setHeader('Content-Type', 'application/json')
           try {
             let raw = ''
             for await (const chunk of req) raw += chunk
             const body = JSON.parse(raw)
             if (pathname === '/mortgage-steps') return res.end(JSON.stringify(await mortgageSteps(chat, body.context)))
+            if (pathname === '/tts') {
+              const audio = await speech(tts, body.text)
+              res.setHeader('Content-Type', 'audio/mpeg')
+              return res.end(audio)
+            }
             if (pathname === '/scenarios') return res.end(JSON.stringify(await whatIfScenarios(chat, body.context)))
             if (pathname === '/chat') {
               const reply = await chatReply(chat, body.context, body.messages, body.ledger)
@@ -42,7 +49,7 @@ function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig): 
             }
             res.end(JSON.stringify(await classifyPurchases(laya, body.goal, body.purchases)))
           } catch (e) {
-            const known = e instanceof ClassifyError || e instanceof ChatError || e instanceof ScenarioError
+            const known = e instanceof ClassifyError || e instanceof ChatError || e instanceof ScenarioError || e instanceof TtsError
             res.statusCode = known ? e.status : 400
             res.end(JSON.stringify({ error: known ? e.message : 'Bad request' }))
           }
@@ -70,10 +77,12 @@ function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig): 
 }
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, path.resolve(import.meta.dirname, '../server'), ['SUPABASE_', 'LAYA_', 'OPENAI_'])
+  const env = loadEnv(mode, path.resolve(import.meta.dirname, '../server'), ['SUPABASE_', 'LAYA_', 'OPENAI_', 'ELEVENLABS_'])
   // Vite does not load non-VITE_ variables from client/.env automatically.
   // Allow a local Laya URL there too, while keeping server/.env authoritative.
   const localLaya = loadEnv(mode, import.meta.dirname, 'LAYA_')
+  // The ElevenLabs key lives in .env.local at the repo root (written by `elevenlabs onboard`).
+  const eleven = { ...env, ...loadEnv(mode, path.resolve(import.meta.dirname, '..'), 'ELEVENLABS_') }
   return {
     plugins: [
       react(),
@@ -83,6 +92,7 @@ export default defineConfig(({ mode }) => {
         env.SUPABASE_SERVICE_ROLE_KEY,
         { baseUrl: env.LAYA_BASE_URL || localLaya.LAYA_BASE_URL, apiKey: env.LAYA_API_KEY || localLaya.LAYA_API_KEY },
         { apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL },
+        { apiKey: eleven.ELEVENLABS_API_KEY, voiceId: eleven.ELEVENLABS_VOICE_ID, model: eleven.ELEVENLABS_MODEL },
       ),
     ],
   }

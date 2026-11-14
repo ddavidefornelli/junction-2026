@@ -64,10 +64,38 @@
   }
 }
 
+/* Walter talking (src/WalterAvatar.tsx): his mouth moves, a ring pulses. */
+.walter-talking {
+  animation: walter-ring 1.4s ease-out infinite;
+}
+@keyframes walter-ring {
+  from {
+    box-shadow: 0 0 0 0 rgb(11 122 75 / 0.45);
+  }
+  to {
+    box-shadow: 0 0 0 8px rgb(11 122 75 / 0);
+  }
+}
+.walter-mouth {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: walter-mouth 0.32s ease-in-out infinite alternate;
+}
+@keyframes walter-mouth {
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up,
   .flow-line,
-  .seal-pulse {
+  .seal-pulse,
+  .walter-talking,
+  .walter-mouth {
     animation: none;
   }
   .draw-line {

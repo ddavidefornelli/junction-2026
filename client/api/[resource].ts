@@ -9,7 +9,7 @@ type Response = {
   setHeader(name: string, value: string): void
   json(body: unknown): void
   write(chunk: string): void
-  end(body?: string): void
+  end(body?: string | Uint8Array): void
 }
 
 const TABLES = new Set(['customers', 'transactions', 'mortgage_applications'])
@@ -82,6 +82,28 @@ export default async function handler(req: Request, res: Response) {
     } catch (error) {
       const { status, message } = failure(error)
       console.error('[api/scenarios] Request failed', { status, message, error })
+      return res.status(status).json({ error: message })
+    }
+  }
+
+  if (resource === 'tts') {
+    if (req.method !== 'POST') return res.status(405).end()
+
+    try {
+      const { speech } = await import('../tts.js')
+      const { text } = (req.body ?? {}) as { text?: unknown }
+      const config = {
+        apiKey: process.env.ELEVENLABS_API_KEY,
+        voiceId: process.env.ELEVENLABS_VOICE_ID,
+        model: process.env.ELEVENLABS_MODEL,
+      }
+      const audio = await speech(config, text)
+      res.setHeader('Content-Type', 'audio/mpeg')
+      res.setHeader('Cache-Control', 'no-store')
+      return res.end(audio)
+    } catch (error) {
+      const { status, message } = failure(error)
+      console.error('[api/tts] Request failed', { status, message, error })
       return res.status(status).json({ error: message })
     }
   }

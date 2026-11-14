@@ -4,6 +4,7 @@ import { parseReply, sendChat, suggestionsOf, type Chart, type ChatMessage } fro
 import { ChatChart } from './ChatChart'
 import { ChatLookup } from './ChatLookup'
 import { SecureNote } from './Security'
+import { speak, speakableText, useVoice } from './voice'
 
 const BUBBLE = 'w-fit max-w-[90%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm'
 
@@ -57,6 +58,7 @@ export function Chat({
   const log = useRef<HTMLDivElement>(null)
   const handledPrompt = useRef<number | null>(null)
   const handledQuestion = useRef<string | null>(null)
+  const voice = useVoice()
 
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight })
@@ -74,7 +76,8 @@ export function Chat({
     setError(false)
     setBusy(true)
     try {
-      await sendChat(context, ledger, asked, (reply) => onMessages([...asked, { role: 'assistant', content: reply }]))
+      const reply = await sendChat(context, ledger, asked, (reply) => onMessages([...asked, { role: 'assistant', content: reply }]))
+      if (voice.enabled) void speak(reply)
     } catch {
       // Nothing, or a reply cut short: back to the question, so it can be asked again.
       onMessages(asked)
@@ -82,7 +85,7 @@ export function Chat({
     } finally {
       setBusy(false)
     }
-  }, [busy, context, ledger, messages, onMessages])
+  }, [busy, context, ledger, messages, onMessages, voice.enabled])
 
   useEffect(() => {
     if (question === null) {
@@ -127,7 +130,7 @@ export function Chat({
               </p>
             ) : (
               // A reply is text, with a chart where the assistant chose to draw one.
-              parseReply(m.content).map((part, j) =>
+              [...parseReply(m.content).map((part, j) =>
                 typeof part === 'string' ? (
                   <p key={`${i}-${j}`} className={`bg-paper ${BUBBLE}`}>
                     {withLinks(part)}
@@ -141,7 +144,18 @@ export function Chat({
                     onPick={busy || context === null ? undefined : (label) => ask(followUp(part.type, label))}
                   />
                 ),
-              )
+              ),
+              // Hear a finished reply (again).
+              !(busy && i === messages.length - 1) && speakableText(m.content) && (
+                <button
+                  key={`${i}-listen`}
+                  onClick={() => void speak(m.content)}
+                  disabled={voice.loading}
+                  className="block text-xs text-muted underline-offset-4 hover:text-ink hover:underline disabled:opacity-50"
+                >
+                  <span aria-hidden="true">🔊 </span>Listen
+                </button>
+              )]
             ),
           )}
           {!busy && suggestions.length > 0 && (

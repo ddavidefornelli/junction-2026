@@ -1,8 +1,9 @@
 // Walter's profile picture: a drawn portrait in the app's own colours, so it
-// stays sharp at any size and needs no image file.
-export function WalterAvatar({ className = 'h-10 w-10' }: { className?: string }) {
+// stays sharp at any size and needs no image file. While `talking`, his mouth
+// moves and a ring pulses around him.
+export function WalterAvatar({ className = 'h-10 w-10', talking = false }: { className?: string; talking?: boolean }) {
   return (
-    <svg viewBox="0 0 64 64" aria-hidden="true" className={`shrink-0 rounded-full ${className}`}>
+    <svg viewBox="0 0 64 64" aria-hidden="true" className={`shrink-0 rounded-full ${talking ? 'walter-talking' : ''} ${className}`}>
       <defs>
         <clipPath id="walter-frame">
           <circle cx="32" cy="32" r="32" />
@@ -32,7 +33,11 @@ export function WalterAvatar({ className = 'h-10 w-10' }: { className?: string }
         <path d="M31 29.500h2M21.600 29.500h-2.600M42.400 29.500h2.600" stroke="#0a2540" strokeWidth="1.500" strokeLinecap="round" />
         {/* moustache and smile */}
         <path d="M32 35.500c-2.200-1.800-5.800-1.500-7.500 1.400 2.600 1 5.500.9 7.500-.4 2 1.300 4.900 1.400 7.500.4-1.700-2.900-5.300-3.200-7.500-1.400z" fill="#aab1bc" />
-        <path d="M28.800 39.200c2 1.500 4.400 1.500 6.400 0" fill="none" stroke="#b5785a" strokeWidth="1.300" strokeLinecap="round" />
+        {talking ? (
+          <ellipse className="walter-mouth" cx="32" cy="39.600" rx="2.800" ry="1.800" fill="#7a3b2e" />
+        ) : (
+          <path d="M28.800 39.200c2 1.500 4.400 1.500 6.400 0" fill="none" stroke="#b5785a" strokeWidth="1.300" strokeLinecap="round" />
+        )}
       </g>
     </svg>
   )
