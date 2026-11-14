@@ -123,7 +123,10 @@ export async function classify(goal: string, txs: Transaction[]): Promise<Record
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ goal, purchases: [...kinds.values()] }),
   })
-  if (!res.ok) throw new Error(`Request failed (${res.status})`)
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null)
+    throw new Error(typeof detail?.error === 'string' ? detail.error : `Request failed (${res.status})`)
+  }
   const verdicts: Verdict[] = await res.json()
   return Object.fromEntries([...kinds.keys()].map((key, i) => [key, verdicts[i]]))
 }

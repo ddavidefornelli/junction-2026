@@ -16,20 +16,59 @@ export type Wellness = {
   negativeDays: number
   essentials: number
   categories: [string, number][]
+  savingMonths: number
+  observedMonths: number
 }
 
 const clamp = (value: number, max: number) => Math.min(max, Math.max(0, value))
 
-// Indicative 0–100 financial impact score: 40 points for saving 20% or more
-// of income, 35 for a 3-month average cash buffer, 25 for no overdrawn days.
-export function impactScore(w: Wellness): number {
-  const savings = 40 * clamp((w.savingsRate ?? 0) / 0.2, 1)
+// This is an illustrative model, NOT Intesa Sanpaolo's proprietary formula.
+// Unknown answers and insufficient transaction history are never scored as zero.
+export type WellnessAnswers = {
+  control: number | null       // 0–4: perceived control over finances
+  worry: number | null         // 0–4: frequency of financial worry (reversed)
+  confidence: number | null    // 0–4: confidence in reaching goals
+  inflation: boolean | null
+  compoundInterest: boolean | null
+  diversification: boolean | null
+  budget: boolean | null
+  plan: boolean | null
+}
+
+export const emptyAnswers = (): WellnessAnswers => ({
+  control: null, worry: null, confidence: null,
+  inflation: null, compoundInterest: null, diversification: null,
+  budget: null, plan: null,
+})
+
+export type WellnessScores = {
+  resilience: number | null
+  perception: number | null
+  knowledge: number | null
+  behaviors: number | null
+  total: number | null
+}
+
+export function wellnessScores(w: Wellness, a: WellnessAnswers): WellnessScores {
   const monthlyOutgoings = w.outgoing / w.days * 30
-  const buffer = monthlyOutgoings > 0
-    ? 35 * clamp(w.averageBalance / (monthlyOutgoings * 3), 1)
-    : (w.averageBalance > 0 ? 35 : 0)
-  const overdraft = 25 * (1 - w.negativeDays / w.days)
-  return Math.round(savings + buffer + overdraft)
+  const resilience = w.savingsRate === null || monthlyOutgoings <= 0 ? null : Math.round(
+    15 * clamp(w.savingsRate / 0.2, 1) +
+    15 * clamp(w.averageBalance / (3 * monthlyOutgoings), 1) +
+    5 * (1 - w.negativeDays / w.days),
+  )
+  const ratings = [a.control, a.worry, a.confidence]
+  const perception = ratings.every((n) => Number.isInteger(n) && n !== null && n >= 0 && n <= 4)
+    ? Math.round(25 * ((a.control! + (4 - a.worry!) + a.confidence!) / 12)) : null
+  const quiz = [a.inflation, a.compoundInterest, a.diversification]
+  const knowledge = quiz.every((v) => typeof v === 'boolean')
+    ? Math.round(20 * quiz.filter(Boolean).length / 3) : null
+  const behaviors = w.observedMonths < 2 || typeof a.budget !== 'boolean' || typeof a.plan !== 'boolean'
+    ? null : Math.round(10 * w.savingMonths / w.observedMonths + (a.budget ? 5 : 0) + (a.plan ? 5 : 0))
+  const parts = [resilience, perception, knowledge, behaviors]
+  return {
+    resilience, perception, knowledge, behaviors,
+    total: parts.every((n) => n !== null) ? parts.reduce<number>((sum, n) => sum + n!, 0) : null,
+  }
 }
 
 // A day uses the last recorded balance for each account. Carry it forward on days
@@ -41,9 +80,12 @@ export function calculateWellness(txs: Transaction[]): Wellness | null {
   let outgoing = 0
   let essentials = 0
   const spending = new Map<string, number>()
+  const months = new Map<string, number>()
   const byDay = new Map<string, Map<string, number>>()
   for (const tx of rows) {
     const amount = Number(tx.tx_amount_eur)
+    const month = tx.tx_date.slice(0, 7)
+    months.set(month, (months.get(month) ?? 0) + amount)
     if (amount > 0) incoming += amount
     if (amount < 0) {
       outgoing -= amount
@@ -70,6 +112,14 @@ export function calculateWellness(txs: Transaction[]): Wellness | null {
     balanceSum += total
     if (total < 0) negativeDays++
   }
+  // Count only complete calendar months: partial boundary months distort saving regularity.
+  const fullMonths: number[] = []
+  const firstMonth = new Date(`${from.slice(0, 7)}-01T00:00:00Z`)
+  for (const month = firstMonth; month.toISOString().slice(0, 7) <= to.slice(0, 7); month.setUTCMonth(month.getUTCMonth() + 1)) {
+    const key = month.toISOString().slice(0, 7)
+    const end = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0)).toISOString().slice(0, 10)
+    if (from <= `${key}-01` && to >= end) fullMonths.push(months.get(key) ?? 0)
+  }
   const net = incoming - outgoing
   return {
     from,
@@ -84,5 +134,7 @@ export function calculateWellness(txs: Transaction[]): Wellness | null {
     negativeDays,
     essentials,
     categories: [...spending].sort((a, b) => b[1] - a[1]).slice(0, 5),
+    savingMonths: fullMonths.filter((net) => net > 0).length,
+    observedMonths: fullMonths.length,
   }
 }

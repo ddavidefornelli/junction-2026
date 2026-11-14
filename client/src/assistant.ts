@@ -5,7 +5,7 @@ import type { Mortgage, Transaction } from './api'
 import { goalStatement, type GoalProfile } from './goal'
 import { kindOf, suggestions } from './mcc'
 import type { Plan } from './plan'
-import { impactScore, type Wellness } from './wellness'
+import type { Wellness } from './wellness'
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
@@ -23,6 +23,7 @@ const words = (s: string | null) => (s ?? 'unknown').replace(/_/g, ' ')
 export function buildContext(d: {
   balance: number | null
   wellness: Wellness | null
+  score: number | null
   allTxs: Transaction[] | null // oldest first
   goal: GoalProfile | null
   plan: Plan | null
@@ -41,7 +42,9 @@ export function buildContext(d: {
       `- Average balance: ${eur(w.averageBalance)}`,
       `- Days overdrawn: ${w.negativeDays}`,
       `- Housing and utilities: ${eur(w.essentials)}`,
-      `- Financial score: ${impactScore(w)} / 100 (40 points for saving 20% of income, 35 for an average balance covering three months of spending, 25 for no overdrawn days)`,
+      d.score === null
+        ? '- Illustrative financial score unavailable until account data and questionnaire answers are complete; do not estimate it.'
+        : `- Illustrative financial score: ${d.score} / 100 (resilience 35, perception 25, knowledge 20, behaviors 20; not a credit score)`,
     )
   }
 

@@ -84,6 +84,10 @@ export async function classifyPurchases(
     throw new ClassifyError(400, 'Invalid goal')
   if (!Array.isArray(kinds) || kinds.length === 0 || kinds.length > MAX_KINDS)
     throw new ClassifyError(400, `Expected 1–${MAX_KINDS} purchases`)
+  if (kinds.some((k) => !k || typeof k !== 'object' ||
+    (k.category != null && typeof k.category !== 'string') ||
+    (k.transaction_type != null && typeof k.transaction_type !== 'string')))
+    throw new ClassifyError(400, 'Invalid purchase')
   const goalText = goal.trim()
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -102,13 +106,25 @@ export async function classifyPurchases(
       throw new ClassifyError(502, `Could not reach Laya at ${baseUrl}`)
     }
     if (!res.ok) throw new ClassifyError(502, `Laya request failed (${res.status})`)
-    const answer = (await res.json())?.answers?.q
-    if (!answer) throw new ClassifyError(502, 'Unexpected response from Laya')
-    return answer
+    let answer: unknown
+    try {
+      answer = (await res.json())?.answers?.q
+    } catch {
+      throw new ClassifyError(502, 'Unexpected response from Laya')
+    }
+    if (!answer || typeof answer !== 'object') throw new ClassifyError(502, 'Unexpected response from Laya')
+    return answer as Record<string, unknown>
   }
-  const yes = async (state: unknown, question: object) => (await ask(state, question)).noul > 0.5
+  const yes = async (state: unknown, question: object) => {
+    const value = (await ask(state, question)).noul
+    if (typeof value !== 'number' || !Number.isFinite(value))
+      throw new ClassifyError(502, 'Unexpected response from Laya')
+    return value > 0.5
+  }
 
-  const savingGoal = yes(`Goal: ${goalText}`, SAVING_GOAL_QUESTION)
+  // Resolve this shared question before spawning the per-kind requests, so a
+  // failed round cannot leave its promise rejected and unobserved.
+  const savingGoal = await yes(`Goal: ${goalText}`, SAVING_GOAL_QUESTION)
   return Promise.all(
     (kinds as PurchaseKind[]).map(async (k) => {
       const category = words(k.category)
@@ -116,7 +132,9 @@ export async function classifyPurchases(
         ask({ category, type: words(k.transaction_type) }, SPENDING_QUESTION),
         yes({ goal: goalText, spending: category.toLowerCase() }, SAME_TOPIC_QUESTION),
       ])
-      return verdictFor(spending.choice, await savingGoal, sameTopic)
+      if (spending.choice !== 'n' && spending.choice !== 'd' && spending.choice !== 's')
+        throw new ClassifyError(502, 'Unexpected response from Laya')
+      return verdictFor(spending.choice, savingGoal, sameTopic)
     }),
   )
 }

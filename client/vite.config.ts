@@ -11,8 +11,8 @@ const TABLES = ['customers', 'transactions', 'mortgage_applications']
 //   GET  /api/<table>?<postgrest query>   read-only Supabase access
 //   POST /api/classify {goal, purchases}  good / bad / neutral verdicts from Laya (laya.ts)
 //   POST /api/chat {context, messages}    the assistant's reply from OpenAI, streamed as plain text (chat.ts)
-// The dev server calls Supabase, Laya and OpenAI itself with the keys from server/.env,
-// so the keys never reach the browser.
+// The dev server calls Supabase, Laya and OpenAI itself with keys from server/.env
+// (or client/.env for Laya); the keys never reach the browser.
 function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig): Plugin {
   return {
     name: 'bank-api',
@@ -66,6 +66,9 @@ function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig): 
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(import.meta.dirname, '../server'), ['SUPABASE_', 'LAYA_', 'OPENAI_'])
+  // Vite does not load non-VITE_ variables from client/.env automatically.
+  // Allow a local Laya URL there too, while keeping server/.env authoritative.
+  const localLaya = loadEnv(mode, import.meta.dirname, 'LAYA_')
   return {
     plugins: [
       react(),
@@ -73,7 +76,7 @@ export default defineConfig(({ mode }) => {
       bankApi(
         env.SUPABASE_URL,
         env.SUPABASE_SERVICE_ROLE_KEY,
-        { baseUrl: env.LAYA_BASE_URL, apiKey: env.LAYA_API_KEY },
+        { baseUrl: env.LAYA_BASE_URL || localLaya.LAYA_BASE_URL, apiKey: env.LAYA_API_KEY || localLaya.LAYA_API_KEY },
         { apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL },
       ),
     ],
