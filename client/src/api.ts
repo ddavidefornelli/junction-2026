@@ -71,6 +71,16 @@ export async function getCustomer(id: string): Promise<Customer | null> {
   return rows[0] ?? null
 }
 
+export async function getCustomerIds(offset: number, limit = 100): Promise<string[]> {
+  const rows = await get<Pick<Customer, 'customer_id'>[]>('customers', {
+    select: 'customer_id',
+    order: 'customer_id.asc',
+    offset: String(offset),
+    limit: String(limit),
+  })
+  return rows.map((row) => row.customer_id)
+}
+
 export function getTransactions(customerId: string, offset: number): Promise<Transaction[]> {
   return get('transactions', {
     customer_id: `eq.${customerId}`,

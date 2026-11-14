@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import {
   PAGE_SIZE,
   getCustomer,
+  getCustomerIds,
   getMortgage,
   getTransactions,
   getWellnessTransactions,
@@ -85,6 +86,11 @@ const SEAL_MS = 1500
 
 function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOut: boolean }) {
   const [id, setId] = useState('')
+  const [customerIds, setCustomerIds] = useState<string[]>([])
+  const [loadingCustomerIds, setLoadingCustomerIds] = useState(true)
+  const [loadingMoreCustomerIds, setLoadingMoreCustomerIds] = useState(false)
+  const [customerIdsError, setCustomerIdsError] = useState('')
+  const [hasMoreCustomerIds, setHasMoreCustomerIds] = useState(false)
   // The customer whose session has just been secured; the account opens a beat later.
   const [sealed, setSealed] = useState<string | null>(null)
   useEffect(() => {
@@ -96,6 +102,41 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
   }, [sealed, onLogin])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    let stale = false
+    getCustomerIds(0)
+      .then((ids) => {
+        if (stale) return
+        setCustomerIds(ids)
+        setHasMoreCustomerIds(ids.length === 100)
+        setCustomerIdsError('')
+      })
+      .catch(() => {
+        if (!stale) setCustomerIdsError('Could not load customer IDs. You can still enter one below.')
+      })
+      .finally(() => {
+        if (!stale) setLoadingCustomerIds(false)
+      })
+    return () => {
+      stale = true
+    }
+  }, [])
+
+  async function loadMoreCustomerIds() {
+    if (loadingMoreCustomerIds || !hasMoreCustomerIds) return
+    setLoadingMoreCustomerIds(true)
+    setCustomerIdsError('')
+    try {
+      const more = await getCustomerIds(customerIds.length)
+      setCustomerIds((current) => [...current, ...more])
+      setHasMoreCustomerIds(more.length === 100)
+    } catch {
+      setCustomerIdsError('Could not load more customer IDs. Try again.')
+    } finally {
+      setLoadingMoreCustomerIds(false)
+    }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -136,8 +177,38 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
             You are logged out. Your session was cleared from this tab.
           </p>
         )}
+        <div className="mb-4">
+          <label htmlFor="customer-picker" className="mb-1.5 block text-sm text-muted">
+            Choose a customer ID from the list
+          </label>
+          <select
+            id="customer-picker"
+            value={customerIds.includes(id.trim().toUpperCase()) ? id.trim().toUpperCase() : ''}
+            onChange={(e) => setId(e.target.value)}
+            disabled={loadingCustomerIds || customerIds.length === 0}
+            className="w-full rounded-md border border-line bg-white px-3 py-2.5 outline-none focus:border-ink disabled:bg-paper disabled:text-muted"
+          >
+            <option value="">
+              {loadingCustomerIds ? 'Loading customer IDs…' : customerIds.length ? 'Select a customer ID' : 'No IDs loaded'}
+            </option>
+            {customerIds.map((customerId) => (
+              <option key={customerId} value={customerId}>{customerId}</option>
+            ))}
+          </select>
+          {hasMoreCustomerIds && (
+            <button
+              type="button"
+              onClick={loadMoreCustomerIds}
+              disabled={loadingMoreCustomerIds}
+              className="mt-2 text-sm underline underline-offset-4 disabled:opacity-50"
+            >
+              {loadingMoreCustomerIds ? 'Loading…' : `Load next 100 (${customerIds.length} loaded)`}
+            </button>
+          )}
+          {customerIdsError && <p role="status" className="mt-2 text-sm text-red-700">{customerIdsError}</p>}
+        </div>
         <label htmlFor="customer-id" className="mb-1.5 block text-sm text-muted">
-          Customer ID
+          Or enter a customer ID
         </label>
         <input
           id="customer-id"
@@ -421,7 +492,6 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           benchmark={benchmark}
           area={area}
           savingRange={savingRange}
-          onOpenChat={() => setChatOpen(true)}
           tagOf={tagOf}
           txs={txs}
           wellness={wellness}
@@ -601,7 +671,6 @@ function Overview({
   benchmark,
   area,
   savingRange,
-  onOpenChat,
   tagOf,
   txs,
   wellness,
@@ -623,7 +692,6 @@ function Overview({
   benchmark: Benchmark | null
   area: AreaView | null
   savingRange: (draft: GoalProfile) => Promise<{ usual: number; max: number } | null>
-  onOpenChat: () => void
   tagOf: (tx: Transaction) => Tag
   txs: Transaction[]
   wellness: Wellness | null
@@ -677,56 +745,34 @@ function Overview({
         </div>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
-          <div className="flex h-full min-h-40 flex-col p-5">
-            <h2 className="border-b border-line pb-3 font-medium">Your financial profile</h2>
-            <div className="my-4 flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-3xl font-semibold leading-none text-emerald-900">
-                  {score === null ? '—' : `${score} / 100`}
-                </p>
-                {displayScore.provisional && <p className="mt-1 text-xs text-muted">Preliminary · account activity only</p>}
-                <p className="mt-2 text-sm text-muted">
-                  {displayScore.provisional
-                    ? 'Preliminary · account activity only.'
-                    : score !== null
-                      ? `${financialProfileTagline(score)} ${scoreDescription(score)}`
-                      : wellnessError
-                        ? 'Profile unavailable'
-                        : wellnessLoading
-                          ? 'Calculating…'
-                          : 'Not enough account activity yet.'}
-                </p>
-              </div>
-              <WellnessApple stage={score === null ? null : Math.min(4, Math.floor(score / 20))} className="size-16 shrink-0" />
+      <Card>
+        <div className="flex h-full min-h-40 flex-col p-5">
+          <h2 className="border-b border-line pb-3 font-medium">Your financial profile</h2>
+          <div className="my-4 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-3xl font-semibold leading-none text-emerald-900">
+                {score === null ? '—' : `${score} / 100`}
+              </p>
+              {displayScore.provisional && <p className="mt-1 text-xs text-muted">Preliminary · account activity only</p>}
+              <p className="mt-2 text-sm text-muted">
+                {displayScore.provisional
+                  ? 'Preliminary · account activity only.'
+                  : score !== null
+                    ? `${financialProfileTagline(score)} ${scoreDescription(score)}`
+                    : wellnessError
+                      ? 'Profile unavailable'
+                      : wellnessLoading
+                        ? 'Calculating…'
+                        : 'Not enough account activity yet.'}
+              </p>
             </div>
-            <button onClick={onShowWellness} className="mt-auto flex w-full items-center justify-center gap-1.5 rounded-md border border-line px-3 py-2.5 text-sm font-medium hover:bg-paper">
-              See details <span aria-hidden="true">→</span>
-            </button>
+            <WellnessApple stage={score === null ? null : Math.min(4, Math.floor(score / 20))} golden={score === 100 && !displayScore.provisional} className="size-16 shrink-0" />
           </div>
-        </Card>
-        <Card>
-          <div className="flex h-full min-h-40 flex-col p-5">
-            <div className="flex items-center gap-3 border-b border-line pb-3">
-              <WalterAvatar />
-              <div>
-                <h2 className="text-sm font-medium">Walter</h2>
-                <p className="text-xs text-muted">Your Pankki assistant</p>
-              </div>
-            </div>
-            <div className="my-4 rounded-lg bg-paper p-3 text-sm">
-              Hi, I'm Walter. Ask me how your finances are doing, or what to do next.
-            </div>
-            <button
-              onClick={onOpenChat}
-              className="mt-auto flex w-full items-center justify-center gap-2 rounded-md bg-ink px-3 py-2.5 text-sm font-medium text-white hover:bg-ink/90"
-            >
-              Talk with our AI assistant
-            </button>
-          </div>
-        </Card>
-      </div>
+          <button onClick={onShowWellness} className="mt-auto flex w-full items-center justify-center gap-1.5 rounded-md border border-line px-3 py-2.5 text-sm font-medium hover:bg-paper">
+            See details <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      </Card>
 
       {baskets && <BasketsCard data={baskets} />}
 
@@ -1007,7 +1053,7 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
             </div>
           </div>
           <div className="mx-auto grid size-44 place-items-center rounded-full bg-emerald-50 sm:size-48">
-            <WellnessApple stage={stage} className="size-40 sm:size-44" />
+            <WellnessApple stage={stage} golden={score === 100 && !displayScore.provisional} className="size-40 sm:size-44" />
           </div>
         </div>
         {openDetails === 'score' && (

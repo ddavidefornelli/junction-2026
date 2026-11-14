@@ -8,10 +8,17 @@ const stages = [
   { skin: '#39a65f', shine: '#83cf8a', leaf: '#207f44', spot: '#39a65f' },
 ] as const
 
-export function WellnessApple({ stage, className = '' }: { stage: number | null; className?: string }) {
-  const color = stage === null ? { skin: '#d7e6d7', shine: '#edf5e9', leaf: '#a8c9ae', spot: '#d7e6d7' } : stages[stage]
+const GOLDEN = { skin: '#e8b72f', shine: '#fff0a6', leaf: '#3e8b48', spot: '#b77b12' }
+
+export function WellnessApple({ stage, golden = false, className = '' }: { stage: number | null; golden?: boolean; className?: string }) {
+  const color = golden ? GOLDEN : stage === null ? { skin: '#d7e6d7', shine: '#edf5e9', leaf: '#a8c9ae', spot: '#d7e6d7' } : stages[stage]
+  const description = golden
+    ? 'Golden apple: financial profile score 100 out of 100'
+    : stage === null
+      ? 'Apple: score not available'
+      : `Apple wellness stage ${stage + 1} of 5`
   return (
-    <svg viewBox="0 0 220 220" className={className} role="img" aria-label={stage === null ? 'Apple: score not available' : `Apple wellness stage ${stage + 1} of 5`}>
+    <svg viewBox="0 0 220 220" className={className} role="img" aria-label={description}>
       <path d="M110 72 C110 53 112 38 125 29" fill="none" stroke="#6d573c" strokeWidth="7" strokeLinecap="round" />
       <path d="M119 51 C132 28 152 25 169 32 C161 52 140 62 119 51Z" fill={color.leaf} />
       <path d="M110 75 C88 58 63 59 50 77 C30 102 39 146 58 174 C72 195 91 194 110 183 C129 195 148 196 162 175 C181 147 190 102 170 77 C157 59 132 58 110 75Z" fill={color.skin} stroke="#365d40" strokeWidth="3" />
