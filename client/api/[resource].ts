@@ -14,6 +14,15 @@ type Response = {
 
 const TABLES = new Set(['customers', 'transactions', 'mortgage_applications'])
 
+// What to answer when a route fails. ClassifyError and ChatError carry the
+// status to use; they are recognised by shape because their modules are loaded
+// inside the routes, and may be what failed to load.
+function failure(error: unknown): { status: number; message: string } {
+  if (error instanceof Error && typeof (error as { status?: unknown }).status === 'number')
+    return { status: (error as unknown as { status: number }).status, message: error.message }
+  return { status: 500, message: 'Server error' }
+}
+
 export default async function handler(req: Request, res: Response) {
   const requestUrl = new URL(req.url ?? '/', 'http://localhost')
   const resource = requestUrl.pathname.split('/').filter(Boolean).at(-1)
@@ -24,7 +33,9 @@ export default async function handler(req: Request, res: Response) {
     try {
       // Load the classifier only for this route. Keeping the bank data routes
       // independent avoids making their startup depend on classifier bundling.
-      const { ClassifyError, classifyPurchases } = await import('../laya')
+      // The ".js" is required: the function runs as an ES module, where Node
+      // does not resolve an import without its extension.
+      const { classifyPurchases } = await import('../laya.js')
       const { goal, purchases } = (req.body ?? {}) as { goal?: unknown; purchases?: unknown }
       const config = {
         baseUrl: process.env.LAYA_BASE_URL,
@@ -32,9 +43,8 @@ export default async function handler(req: Request, res: Response) {
       }
       return res.json(await classifyPurchases(config, goal, purchases))
     } catch (error) {
-      const status = error instanceof ClassifyError ? error.status : 400
-      const message = error instanceof ClassifyError ? error.message : 'Bad request'
-      console.error('[api/classify] Request failed', { status, message })
+      const { status, message } = failure(error)
+      console.error('[api/classify] Request failed', { status, message, error })
       return res.status(status).json({ error: message })
     }
   }
@@ -42,8 +52,8 @@ export default async function handler(req: Request, res: Response) {
   if (resource === 'chat') {
     if (req.method !== 'POST') return res.status(405).end()
 
-    const { ChatError, chatReply } = await import('../chat')
     try {
+      const { chatReply } = await import('../chat.js')
       const { context, messages } = (req.body ?? {}) as { context?: unknown; messages?: unknown }
       const config = { apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL }
       const reply = await chatReply(config, context, messages)
@@ -55,9 +65,8 @@ export default async function handler(req: Request, res: Response) {
       }
       return res.end()
     } catch (error) {
-      const status = error instanceof ChatError ? error.status : 400
-      const message = error instanceof ChatError ? error.message : 'Bad request'
-      console.error('[api/chat] Request failed', { status, message })
+      const { status, message } = failure(error)
+      console.error('[api/chat] Request failed', { status, message, error })
       return res.status(status).json({ error: message })
     }
   }
