@@ -686,6 +686,19 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
         )}
       </section>
 
+      <section aria-labelledby="household-comparison-title" className="rounded-3xl border border-emerald-100 bg-white p-5 sm:p-6">
+        <h2 id="household-comparison-title" className="text-xl font-bold">Customers like you… can plan for surprises</h2>
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl bg-emerald-50 p-4 sm:gap-5">
+          <strong className="text-3xl font-bold text-emerald-900">Almost 1 in 10</strong>
+          <p className="text-sm text-emerald-900">Finnish households said they struggled to make ends meet in 2023.</p>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-700">
+          <span>National figure, not a comparison with similar customers.</span>
+          <a href="https://www.bofbulletin.fi/article/analysis/2026/rise-in-cost-of-living-and-higher-interest-rates-have-increased-the-pressure-on-many-indebted-households/"
+            target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">Bank of Finland ↗</a>
+        </div>
+      </section>
+
       <section aria-labelledby="levels-title" className="rounded-3xl border border-emerald-100 bg-white p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="levels-title" className="text-xl font-bold">From recovery to thriving</h2>
