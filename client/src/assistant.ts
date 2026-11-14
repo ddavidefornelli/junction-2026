@@ -1,8 +1,11 @@
 // Browser side of the assistant: the summary of the customer's finances the
-// model answers from, and the call to /api/chat (see ../chat.ts).
+// model answers from, the transactions it can look things up in, and the call
+// to /api/chat (see ../chat.ts).
 
+import type { Lookup, Row } from '../ledger'
 import type { Mortgage, Transaction } from './api'
-import { leaks, TRIM, type Baskets } from './baskets'
+import { basketOf, INCOME_TYPES, leaks, TRIM, type Baskets } from './baskets'
+import { BASKET_NAMES } from './BasketsCard'
 import { goalStatement, type GoalProfile } from './goal'
 import { kindOf, suggestions } from './mcc'
 import { mortgageFacts, mortgageLines } from './mortgage'
@@ -31,7 +34,10 @@ export function buildContext(d: {
   mortgage: Mortgage | null
   baskets: Baskets | null
 }): string {
-  const out: string[] = [`Today: ${new Date().toISOString().slice(0, 10)}`]
+  // The data may stop well before the calendar date; what counts as "now" for
+  // the customer's figures is their latest transaction, as on the plan.
+  const latest = d.allTxs?.length ? d.allTxs[d.allTxs.length - 1].tx_date : null
+  const out: string[] = [latest ? `Account data up to: ${latest}` : `Today: ${new Date().toISOString().slice(0, 10)}`]
   if (d.balance !== null) out.push(`Current account balance: ${eur(d.balance)}`)
 
   const w = d.wellness
@@ -102,6 +108,7 @@ export function buildContext(d: {
       ...(p.requiredSaving !== null ? [`- Needs to set aside ${eur(p.requiredSaving)} a month to reach the goal on time`] : []),
       `- The most they could set aside with every optional budget cut as far as sensible: ${eur(p.maxSaving)} a month`,
       `- Goal reachable at this pace: ${p.reachable ? 'yes' : 'no'}`,
+      `- Safe to spend this week on everyday extras (shown as "Safe to spend this week"): ${eur(p.safeThisWeek)}. A week's share of the monthly budgets below${p.capped ? `, capped at the ${eur(p.remaining)} left of them in ${p.month}` : ''}; must-pay costs, regular and irregular, are covered outside them`,
     )
     if (p.categories.length) {
       out.push(`Monthly budgets under the plan, and spending so far in ${p.month}:`)
@@ -149,6 +156,32 @@ export function buildContext(d: {
   return out.join('\n')
 }
 
+const SAVING_TYPES = new Set(['investment_deposit', 'investment_withdrawal', 'salary_sweep'])
+
+// The transactions as the rows Walter's lookups run on (see ../ledger.ts),
+// oldest first. Each is described here, with what the app already knows about
+// it (the kind of place, the basket, whether it is spending at all), so a
+// lookup and the rest of the app sort a payment the same way.
+export function ledgerOf(txs: Transaction[]): Row[] {
+  const balances = new Map<string, number>() // the latest balance of each account
+  return [...txs]
+    .sort((a, b) => a.tx_timestamp.localeCompare(b.tx_timestamp))
+    .map((tx) => {
+      balances.set(tx.bank_account_id, Number(tx.balance_after_eur))
+      const basket = basketOf(tx)
+      const type = tx.transaction_type ?? ''
+      return [
+        tx.tx_timestamp.slice(0, 16),
+        Number(tx.tx_amount_eur),
+        tx.category ?? 'Other',
+        kindOf(tx)?.name ?? null,
+        basket ? (type === 'purchase' ? 'purchase' : 'bill') : INCOME_TYPES.has(type) && tx.tx_amount_eur > 0 ? 'income' : SAVING_TYPES.has(type) ? 'savings' : 'other',
+        basket ? BASKET_NAMES[basket.basket].name : null,
+        Math.round([...balances.values()].reduce((a, b) => a + b, 0) * 100) / 100,
+      ]
+    })
+}
+
 // A chart the assistant put in a reply: <chart>{json}</chart> on a line of its own (see ../chat.ts).
 export type Chart = {
   type: 'bar' | 'line'
@@ -183,6 +216,29 @@ function toChart(json: string): Chart | null {
   }
 }
 
+// What a lookup found: <lookup>{json}</lookup>, written by the server each
+// time the assistant looks something up in the transactions (see ../chat.ts).
+export type { Lookup }
+
+function toLookup(json: string): Lookup | null {
+  try {
+    const l = JSON.parse(json)
+    const ok =
+      typeof l.title === 'string' &&
+      typeof l.from === 'string' &&
+      typeof l.to === 'string' &&
+      Array.isArray(l.rows) &&
+      l.rows.every((r: { label?: unknown; amount?: unknown }) => typeof r?.label === 'string' && typeof r.amount === 'number')
+    return ok ? l : null
+  } catch {
+    return null
+  }
+}
+
+// A reply as the model wrote it. The lookups are the server's, not the model's:
+// sent back as history they would only teach it to write its own.
+const withoutLookups = (reply: string) => reply.replace(/<lookup>[\s\S]*?<\/lookup>\s*/g, '')
+
 // The follow-up questions at the end of a reply: <suggest>["…","…"]</suggest>
 // (see ../chat.ts). Empty while they are still being written or if they do not parse.
 export function suggestionsOf(reply: string): string[] {
@@ -198,26 +254,29 @@ export function suggestionsOf(reply: string): string[] {
   }
 }
 
-// A reply as the pieces to show, in order: text and charts. A chart that is
-// still being written (the reply arrives piece by piece) or that does not
-// parse is left out rather than shown as raw text, and so are the suggestions
-// (shown as buttons instead, see suggestionsOf).
-export function parseReply(reply: string): (string | Chart)[] {
-  const parts: (string | Chart)[] = []
+// A reply as the pieces to show, in order: text, charts and lookups. A chart
+// or lookup that is still being written (the reply arrives piece by piece) or
+// that does not parse is left out rather than shown as raw text, and so are
+// the suggestions (shown as buttons instead, see suggestionsOf).
+export function parseReply(reply: string): (string | Chart | Lookup)[] {
+  const parts: (string | Chart | Lookup)[] = []
   const add = (text: string) => {
     if (text.trim()) parts.push(text.trim())
   }
   const suggest = reply.indexOf('<suggest>')
   let rest = suggest < 0 ? reply : reply.slice(0, suggest)
   while (true) {
-    const start = rest.indexOf('<chart>')
-    if (start < 0) break
+    const open = rest.match(/<(chart|lookup)>/)
+    if (!open) break
+    const start = open.index!
     add(rest.slice(0, start))
-    const end = rest.indexOf('</chart>', start)
-    if (end < 0) return parts // unfinished chart: show what came before it
-    const chart = toChart(rest.slice(start + 7, end))
-    if (chart) parts.push(chart)
-    rest = rest.slice(end + 8)
+    const close = `</${open[1]}>`
+    const end = rest.indexOf(close, start)
+    if (end < 0) return parts // unfinished block: show what came before it
+    const json = rest.slice(start + open[0].length, end)
+    const block = open[1] === 'chart' ? toChart(json) : toLookup(json)
+    if (block) parts.push(block)
+    rest = rest.slice(end + close.length)
   }
   add(rest.replace(/<\/?[a-z]{0,7}$/, '')) // a tag cut mid-way
   return parts
@@ -225,16 +284,22 @@ export function parseReply(reply: string): (string | Chart)[] {
 
 // Asks for the reply to the last message in `messages`. It arrives piece by
 // piece: `onText` gets the reply so far each time it grows. Resolves with the
-// whole reply.
+// whole reply. `ledger` is what the assistant can look things up in (see
+// ledgerOf); null when the transactions could not be loaded.
 export async function sendChat(
   context: string,
+  ledger: Row[] | null,
   messages: ChatMessage[],
   onText: (reply: string) => void,
 ): Promise<string> {
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ context, messages: messages.slice(-SENT_MESSAGES) }),
+    body: JSON.stringify({
+      context,
+      ledger,
+      messages: messages.slice(-SENT_MESSAGES).map((m) => (m.role === 'assistant' ? { ...m, content: withoutLookups(m.content) } : m)),
+    }),
   })
   if (!res.ok || !res.body) {
     const error = (await res.json().catch(() => null))?.error
@@ -249,6 +314,7 @@ export async function sendChat(
     reply += value
     onText(reply)
   }
-  if (!reply.trim()) throw new Error('Empty reply')
+  // Lookups with no answer after them: the reply was cut short.
+  if (!withoutLookups(reply).trim()) throw new Error('Empty reply')
   return reply
 }

@@ -54,9 +54,9 @@ export default async function handler(req: Request, res: Response) {
 
     try {
       const { chatReply } = await import('../chat.js')
-      const { context, messages } = (req.body ?? {}) as { context?: unknown; messages?: unknown }
+      const { context, messages, ledger } = (req.body ?? {}) as { context?: unknown; messages?: unknown; ledger?: unknown }
       const config = { apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL }
-      const reply = await chatReply(config, context, messages)
+      const reply = await chatReply(config, context, messages, ledger)
       res.setHeader('Content-Type', 'text/plain; charset=utf-8')
       try {
         for await (const text of reply) res.write(text)

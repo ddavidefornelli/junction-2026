@@ -10,7 +10,7 @@ const TABLES = ['customers', 'transactions', 'mortgage_applications']
 // API for the client:
 //   GET  /api/<table>?<postgrest query>   read-only Supabase access
 //   POST /api/classify {goal, purchases}  good / bad / neutral verdicts from Laya (laya.ts)
-//   POST /api/chat {context, messages}    the assistant's reply from OpenAI, streamed as plain text (chat.ts)
+//   POST /api/chat {context, messages, ledger}  the assistant's reply from OpenAI, streamed as plain text (chat.ts)
 //   POST /api/mortgage-steps {context}    AI-written next steps towards the mortgage, as JSON (chat.ts)
 // The dev server calls Supabase, Laya and OpenAI itself with keys from server/.env
 // (or client/.env for Laya); the keys never reach the browser.
@@ -28,7 +28,7 @@ function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig): 
             const body = JSON.parse(raw)
             if (pathname === '/mortgage-steps') return res.end(JSON.stringify(await mortgageSteps(chat, body.context)))
             if (pathname === '/chat') {
-              const reply = await chatReply(chat, body.context, body.messages)
+              const reply = await chatReply(chat, body.context, body.messages, body.ledger)
               res.setHeader('Content-Type', 'text/plain; charset=utf-8')
               try {
                 for await (const text of reply) res.write(text)

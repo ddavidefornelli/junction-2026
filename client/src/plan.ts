@@ -4,7 +4,10 @@
 //   3. the gap is taken out of their usual spending, budget line by budget line
 //      (see maxCut). A line is a category, or a kind of place the MCC sets apart
 //      from it (see lineOf);
-//   4. a purchase is flagged only once its line has passed its budget for that month.
+//   4. a purchase is flagged only once its line has passed its budget for that month;
+//   5. the budgets, spread evenly over the month, give what is safe to spend this week.
+//      Basket 1 and 2 costs (rent, bills, food, surprises) sit outside the budgets,
+//      so this is money for the everyday basket only.
 // Laya decides which kinds of purchase are optional for the goal (the verdicts);
 // everything else here is arithmetic on the customer's own history.
 
@@ -30,9 +33,10 @@ export type Plan = {
   maxSaving: number // the most the plan can set aside a month: usual saving plus every cut at its maximum
   reachable: boolean // false when the goal needs more than maxSaving
   categories: CategoryBudget[] // budgeted categories, biggest first
-  daysLeft: number // days left in `month`, counting the day of the latest transaction
-  dailyEssentials: number // usual daily spend on groceries and transport: the floor of the daily budget
-  dailyBudget: number // dailyEssentials plus what is left of this month's budgets, spread over daysLeft
+  budgetTotal: number // all monthly budgets together
+  remaining: number // what is left of them in `month`, never below 0
+  safeThisWeek: number // a week's share of budgetTotal, but no more than `remaining`
+  capped: boolean // true when `remaining` set safeThisWeek, not the week's share
   overBudget: Set<string> // txId of each purchase made after its budget ran out
 }
 
@@ -79,14 +83,12 @@ export function makePlan(
   const usual = new Map<string, number>()
   const flex = new Map<string, number>()
   let net = 0
-  let essentials = 0 // usual monthly spend on everyday essentials, which are never cut
   for (const tx of all) {
     if (!baseline.has(monthOf(tx))) continue
     // Money moved into savings ("good") leaves the account but is not spent.
     if (verdictOf(tx) !== 'good') net += tx.tx_amount_eur
     if (tx.tx_amount_eur >= 0 || verdictOf(tx) === 'good') continue
     const line = lineOf(tx)
-    if (line && (FOOD.test(line) || TRANSPORT.test(line))) essentials -= tx.tx_amount_eur / baseline.size
     const share = line
       ? (flex.get(line) ?? kindOf(tx)?.cut ?? maxCut(line, verdictOf(tx) === 'bad'))
       : 0
@@ -135,18 +137,20 @@ export function makePlan(
       spent: spent.get(`${month}|${category}`) ?? 0,
     }))
     .sort((a, b) => b.usual - a.usual)
-  // "Today" is the latest transaction, so the days left match the spending shown.
-  const [y, m, d] = all[all.length - 1].tx_date.slice(0, 10).split('-').map(Number)
+  // A week's share of the month, the same on any day: spreading what is left over
+  // the days left would hand the whole month's leftovers to its last day.
+  const [y, m] = month.split('-').map(Number)
   const daysInMonth = new Date(y, m, 0).getDate()
-  const daysLeft = daysInMonth - d + 1
-  const remaining = categories.reduce((total, c) => total + c.budget - c.spent, 0)
-  const dailyEssentials = essentials / daysInMonth
+  const budgetTotal = categories.reduce((total, c) => total + c.budget, 0)
+  const remaining = Math.max(0, categories.reduce((total, c) => total + c.budget - c.spent, 0))
+  const weekShare = (budgetTotal * 7) / daysInMonth
 
   return {
     month,
-    daysLeft,
-    dailyEssentials,
-    dailyBudget: dailyEssentials + Math.max(0, remaining) / daysLeft,
+    budgetTotal,
+    remaining,
+    safeThisWeek: Math.min(remaining, weekShare),
+    capped: remaining < weekShare,
     usualSaving,
     requiredSaving,
     maxSaving: usualSaving + capacity,

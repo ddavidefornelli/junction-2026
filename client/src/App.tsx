@@ -18,12 +18,12 @@ import { deadline, goalLabel, goalStatement, loadGoalProfile, monthYear, saveGoa
 import { makePlan, txId, type Plan } from './plan'
 import { kindOf, suggestions, type Suggestion } from './mcc'
 import { makeBaskets, type Baskets } from './baskets'
-import { BasketsCard } from './BasketsCard'
+import { BASKET_NAMES, BasketsCard } from './BasketsCard'
 import { Chat } from './Chat'
 import { WalterAvatar } from './WalterAvatar'
 import { ChatDialog } from './ChatDialog'
 import { WellnessApple } from './WellnessApple'
-import { buildContext, type ChatMessage } from './assistant'
+import { buildContext, ledgerOf, type ChatMessage } from './assistant'
 import { AnalysisSteps, useStagedProgress } from './Analysis'
 import { APPROVED_COLLATERAL_COVER, APPROVED_EQUITY_SHARE, getMortgageSteps, mortgageFacts, type MortgageFacts, type MortgageStep } from './mortgage'
 
@@ -211,6 +211,8 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
         : null,
     [txs, wellness, answers, wellnessError, allTxs, goal, plan, mortgage, baskets],
   )
+  // What the assistant can look things up in: every transaction, described as the app shows it.
+  const chatLedger = useMemo(() => (allTxs ? ledgerOf(allTxs) : null), [allTxs])
   // AI-written next steps on the Loan tab: asked once per customer, kept for the session.
   const stepsKey = `mortgage-steps:${customerId}`
   const [steps, setSteps] = useState<MortgageStep[] | null>(() => {
@@ -347,7 +349,8 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
               messages={chatMessages}
               onMessages={setChatMessages}
               context={chatContext}
-              starters={['How am I doing?', 'Where could I cut back?', goal ? 'Am I on track for my goal?' : 'What should I focus on first?']}
+              ledger={chatLedger}
+              starters={['How am I doing?', 'Where could I cut back?', 'What did I spend in the last two weeks?', goal ? 'Am I on track for my goal?' : 'What should I focus on first?']}
             />
           }
           tagOf={tagOf}
@@ -579,7 +582,7 @@ function Overview({
         goal && (
           <div className="animate-fade-up">
             {plan ? (
-              <PlanCard goal={goal} plan={plan} />
+              <PlanCard goal={goal} plan={plan} baskets={baskets} />
             ) : (
               <Card>
                 <div className="p-5">
@@ -640,11 +643,11 @@ function Overview({
   )
 }
 
-function PlanCard({ goal, plan }: { goal: GoalProfile; plan: Plan }) {
+function PlanCard({ goal, plan, baskets }: { goal: GoalProfile; plan: Plan; baskets: Baskets | null }) {
   const by = deadline(goal)
   const [year, month] = plan.month.split('-')
   // Rounded to cents, so float leftovers never show as "0,00 €" instead of "Used up".
-  const flexibleDaily = Math.round((plan.dailyBudget - plan.dailyEssentials) * 100) / 100
+  const safe = Math.round(plan.safeThisWeek * 100) / 100
   return (
     <Card>
       <div className="p-5">
@@ -665,24 +668,33 @@ function PlanCard({ goal, plan }: { goal: GoalProfile; plan: Plan }) {
         {plan.categories.length > 0 && (
           <>
             <div className="mt-4 rounded-md bg-paper p-4">
-              <p className="text-sm text-muted">Daily budget</p>
-              <p className="mt-1 text-2xl font-semibold tracking-tight">
-                {eur(plan.dailyBudget)} <span className="text-sm font-normal text-muted">a day</span>
+              <p className="text-sm text-muted">Safe to spend this week</p>
+              <p className={`mt-1 text-2xl font-semibold tracking-tight ${safe > 0 ? '' : 'text-amber-900'}`}>
+                {safe > 0 ? eur(safe) : 'Used up'}
               </p>
+              <p className="mt-1 text-sm text-muted">On {BASKET_NAMES.everyday.name.toLowerCase()}: {BASKET_NAMES.everyday.examples.toLowerCase()}.</p>
               <dl className="mt-3 space-y-1.5 border-t border-line pt-3 text-sm">
+                {baskets && (
+                  <>
+                    <div className="flex justify-between gap-4">
+                      <dt>{BASKET_NAMES.fixed.name} <span className="text-muted">· already counted</span></dt>
+                      <dd className="shrink-0">{eur(baskets.baskets.fixed.monthly)} <span className="text-muted">a month</span></dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt>{BASKET_NAMES.irregular.name} <span className="text-muted">· put aside</span></dt>
+                      <dd className="shrink-0">{eur(baskets.baskets.irregular.monthly)} <span className="text-muted">a month</span></dd>
+                    </div>
+                  </>
+                )}
                 <div className="flex justify-between gap-4">
-                  <dt>Essentials <span className="text-muted">· groceries, transport</span></dt>
-                  <dd className="shrink-0">{eur(plan.dailyEssentials)}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>Everything else</dt>
-                  <dd className={`shrink-0 ${flexibleDaily > 0 ? '' : 'text-amber-900'}`}>{flexibleDaily > 0 ? eur(flexibleDaily) : 'Used up'}</dd>
+                  <dt>{BASKET_NAMES.everyday.name} <span className="text-muted">· your budgets</span></dt>
+                  <dd className="shrink-0">{eur(plan.budgetTotal)} <span className="text-muted">a month</span></dd>
                 </div>
               </dl>
               <p className="mt-2 text-xs text-muted">
-                {flexibleDaily > 0
-                  ? `Essentials are what you usually spend a day. The rest is what is left of this month's budgets, over the ${plan.daysLeft === 1 ? 'last day' : `${plan.daysLeft} days left`} of ${Number(month)}/${year}.`
-                  : `This month's budgets are used up, so only essentials are left until they start again next month.`}
+                {safe > 0
+                  ? `A week's share of your budgets below${plan.capped ? `, capped at the ${eur(plan.remaining)} left of them in ${Number(month)}/${year}` : ''}. Rent, bills, food and surprise costs are paid from the rest of your income first.`
+                  : `This month's budgets are used up. Must-pay costs are still covered; the budgets start again next month.`}
               </p>
             </div>
             <p className="mt-4 text-sm text-muted">Monthly budgets · spent in {Number(month)}/{year}</p>
@@ -779,10 +791,26 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
     setActiveTip(next)
     setOpenDetails(null)
   }
+  const wholeEur = (n: number) => eur(Math.round(n)).replace(/,00(?=\s)/, '')
+  const kept = w?.savingsRate ?? null
   const factors = [
-    { title: 'Spending', measure: w ? eur(w.outgoing / w.days * 30) : '—', unit: 'per month, estimated', detail: 'Your withdrawals and payments are averaged over the observed days. This helps compare your cash buffer against three months of spending.' },
-    { title: 'Saving', measure: w ? percent(w.savingsRate) : '—', unit: 'savings rate', detail: 'Money in minus money out, divided by money in. The full score also considers your average account balance.' },
-    { title: 'Planning', measure: w && w.observedMonths >= 2 ? `${w.savingMonths} / ${w.observedMonths}` : '—', unit: 'months with positive cash flow', detail: 'Only complete calendar months count. Positive cash flow does not prove you have a financial plan; your answer to the planning question is assessed separately.' },
+    {
+      title: 'You spend',
+      measure: w ? wholeEur(w.outgoing / w.days * 30) : '—',
+      note: 'each month',
+    },
+    {
+      title: kept !== null && kept < 0 ? 'You spend more than you get' : 'You keep',
+      measure: kept === null ? '—' : percent(Math.abs(kept)),
+      note: kept === null ? 'of the money you get'
+        : kept < 0 ? `about ${Math.round(-kept * 100)} € extra for every 100 € in`
+        : Math.round(kept * 100) < 1 ? 'less than 1 € of every 100 € you get' : `about ${Math.round(kept * 100)} € of every 100 € you get`,
+    },
+    {
+      title: 'Good months',
+      measure: w && w.observedMonths >= 2 ? `${w.savingMonths} of ${w.observedMonths}` : '—',
+      note: 'more money came in than went out',
+    },
   ]
   const toggleDetails = (id: string) => setOpenDetails((current) => current === id ? null : id)
   const seeDetails = (id: string, subject: string) => (
@@ -902,15 +930,13 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
       </section>
 
       <section aria-labelledby="factors-title">
-        <h2 id="factors-title" className="text-xl font-bold">Your money, in three snapshots</h2>
-        <div className="mt-3 grid gap-4 sm:grid-cols-3">
-          {factors.map((factor, index) => (
-            <article key={factor.title} className="flex min-h-72 flex-col rounded-3xl border border-emerald-100 bg-white p-6 sm:min-h-[23rem]">
-              <span className="text-xs font-bold tracking-wide text-emerald-700">0{index + 1} / 03</span>
-              <h3 className="mt-5 text-lg font-semibold text-emerald-900">{factor.title}</h3>
-              <p className="mt-4 text-3xl font-bold text-emerald-950">{factor.measure}</p>
-              <p className="mt-1 text-xs text-emerald-700">{factor.unit}</p>
-              <p className="mt-auto border-t border-emerald-100 pt-5 text-sm leading-relaxed text-emerald-900">{factor.detail}</p>
+        <h2 id="factors-title" className="text-xl font-bold">Your money</h2>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          {factors.map((factor) => (
+            <article key={factor.title} className="rounded-3xl border border-emerald-100 bg-white p-5">
+              <h3 className="text-sm font-semibold text-emerald-800">{factor.title}</h3>
+              <p className="mt-2 text-3xl font-bold tabular-nums text-emerald-950">{factor.measure}</p>
+              <p className="mt-1 text-sm text-emerald-800">{factor.note}</p>
             </article>
           ))}
         </div>

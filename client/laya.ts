@@ -12,9 +12,8 @@ export type Verdict = (typeof VERDICTS)[number]
 export type PurchaseKind = { category: string | null; transaction_type: string | null }
 
 export type LayaConfig = {
-  // Where Laya runs. Unset: the hosted API (api.laya.studio).
+  // Where Laya runs. Unset: the laya-ai.com hosted API (needs apiKey).
   // For server/laya_server.py on this machine: http://127.0.0.1:8000
-  // For the laya-ai.com hosted API: https://api.laya-ai.com (with apiKey)
   baseUrl?: string
   // Required by the hosted API only.
   apiKey?: string
@@ -28,7 +27,7 @@ export class ClassifyError extends Error {
   }
 }
 
-const HOSTED_URL = 'https://api.laya.studio'
+const HOSTED_URL = 'https://api.laya-ai.com'
 const MAX_KINDS = 64
 const MAX_GOAL_LENGTH = 300
 const MAX_CACHED_ANSWERS = 5000
@@ -82,7 +81,7 @@ export async function classifyPurchases(
 ): Promise<Verdict[]> {
   const baseUrl = (config.baseUrl || HOSTED_URL).replace(/\/+$/, '')
   if (baseUrl === HOSTED_URL && !config.apiKey)
-    throw new ClassifyError(503, 'Set LAYA_BASE_URL or LAYA_API_KEY in server/.env')
+    throw new ClassifyError(503, 'Set LAYA_API_KEY in server/.env (or LAYA_BASE_URL for a local Laya server)')
   if (typeof goal !== 'string' || !goal.trim() || goal.length > MAX_GOAL_LENGTH)
     throw new ClassifyError(400, 'Invalid goal')
   if (!Array.isArray(kinds) || kinds.length === 0 || kinds.length > MAX_KINDS)

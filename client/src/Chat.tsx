@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import type { Row } from '../ledger'
 import { parseReply, sendChat, suggestionsOf, type Chart, type ChatMessage } from './assistant'
 import { ChatChart } from './ChatChart'
+import { ChatLookup } from './ChatLookup'
 
 const BUBBLE = 'w-fit max-w-[90%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm'
 
@@ -12,16 +14,19 @@ const followUp = (type: Chart['type'], label: string) =>
 
 // The conversation with the assistant. The messages live in the parent so they
 // survive a change of tab; `context` is the summary the assistant answers from
-// (null while the customer's data is still loading).
+// (null while the customer's data is still loading) and `ledger` the
+// transactions it can look things up in.
 export function Chat({
   messages,
   onMessages,
   context,
+  ledger,
   starters,
 }: {
   messages: ChatMessage[]
   onMessages: (messages: ChatMessage[]) => void
   context: string | null
+  ledger: Row[] | null
   starters: string[]
 }) {
   const [draft, setDraft] = useState('')
@@ -45,7 +50,7 @@ export function Chat({
     setError(false)
     setBusy(true)
     try {
-      await sendChat(context, asked, (reply) => onMessages([...asked, { role: 'assistant', content: reply }]))
+      await sendChat(context, ledger, asked, (reply) => onMessages([...asked, { role: 'assistant', content: reply }]))
     } catch {
       // Nothing, or a reply cut short: back to the question, so it can be asked again.
       onMessages(asked)
@@ -63,6 +68,8 @@ export function Chat({
   const last = messages[messages.length - 1]
   // The reply so far ends in a chart that is still being written.
   const drawing = last?.role === 'assistant' && last.content.lastIndexOf('<chart>') > last.content.lastIndexOf('</chart>')
+  // The reply so far is what Walter looked up; the answer is still to come.
+  const reading = last?.role === 'assistant' && last.content.trimEnd().endsWith('</lookup>')
   // Follow-up questions Walter offered with his latest reply, shown as buttons.
   const suggestions = last?.role === 'assistant' ? suggestionsOf(last.content) : []
   return (
@@ -81,6 +88,8 @@ export function Chat({
                   <p key={`${i}-${j}`} className={`bg-paper ${BUBBLE}`}>
                     {part}
                   </p>
+                ) : 'rows' in part ? (
+                  <ChatLookup key={`${i}-${j}`} lookup={part} />
                 ) : (
                   <ChatChart
                     key={`${i}-${j}`}
@@ -105,9 +114,9 @@ export function Chat({
               ))}
             </div>
           )}
-          {busy && (last?.role === 'user' || drawing) && (
+          {busy && (last?.role === 'user' || drawing || reading) && (
             <p className="w-fit rounded-lg bg-paper px-3 py-2 text-sm text-muted">
-              {drawing ? 'Drawing a chart…' : 'Thinking…'}
+              {drawing ? 'Drawing a chart…' : reading ? 'Working it out…' : 'Thinking…'}
             </p>
           )}
           {error && (

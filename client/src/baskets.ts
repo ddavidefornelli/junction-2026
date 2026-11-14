@@ -37,7 +37,7 @@ export type Baskets = {
 
 const WINDOW_MONTHS = 12 // a full year, so irregular costs have room to show up
 const SPENDING_TYPES = new Set(['purchase', 'housing_payment', 'utilities_payment'])
-const INCOME_TYPES = new Set(['salary', 'other_income'])
+export const INCOME_TYPES = new Set(['salary', 'other_income'])
 
 // Kinds of place set apart from their category, by MCC. Every other kind of
 // transport (public transport, fuel, parking) is getting around, a fixed cost.
