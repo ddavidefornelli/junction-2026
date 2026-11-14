@@ -1,0 +1,61 @@
+import { ClassifyError, classifyPurchases, type LayaConfig } from '../laya'
+
+type Request = {
+  method?: string
+  url?: string
+  body?: unknown
+}
+
+type Response = {
+  status(code: number): Response
+  setHeader(name: string, value: string): void
+  send(body: string): void
+  json(body: unknown): void
+  end(): void
+}
+
+const TABLES = new Set(['customers', 'transactions', 'mortgage_applications'])
+
+export default async function handler(req: Request, res: Response) {
+  const { pathname, search } = new URL(req.url ?? '/', 'http://localhost')
+  const resource = pathname.split('/').filter(Boolean).at(-1)
+
+  if (resource === 'classify') {
+    if (req.method !== 'POST') return res.status(405).end()
+
+    try {
+      const { goal, purchases } = (req.body ?? {}) as { goal?: unknown; purchases?: unknown }
+      const config: LayaConfig = {
+        baseUrl: process.env.LAYA_BASE_URL,
+        apiKey: process.env.LAYA_API_KEY,
+      }
+      return res.json(await classifyPurchases(config, goal, purchases))
+    } catch (error) {
+      const status = error instanceof ClassifyError ? error.status : 400
+      const message = error instanceof ClassifyError ? error.message : 'Bad request'
+      console.error('[api/classify] Request failed', { status, message })
+      return res.status(status).json({ error: message })
+    }
+  }
+
+  if (!TABLES.has(resource ?? '')) return res.status(404).end()
+  if (req.method !== 'GET') return res.status(405).end()
+
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) {
+    console.error('[api] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
+    return res.status(500).json({ error: 'Bank API is not configured' })
+  }
+
+  try {
+    const upstream = await fetch(`${url}/rest/v1/${resource}${search}`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+    })
+    res.setHeader('Content-Type', 'application/json')
+    return res.status(upstream.status).send(await upstream.text())
+  } catch (error) {
+    console.error('[api] Supabase request failed', { resource, error })
+    return res.status(502).json({ error: 'Could not reach Supabase' })
+  }
+}
