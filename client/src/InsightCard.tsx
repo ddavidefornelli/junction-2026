@@ -3,13 +3,13 @@ import type { Insight, InsightChart } from './insights'
 // One insight from the customer's data (see insights.ts): what it is worth, the
 // chart that shows it, and the one thing to do. Charts are plain SVG and HTML.
 
-const INK = '#0c1030'
-const MARK = '#2b3fff' // the customer's own figures
+const INK = '#0b2a1d'
+const MARK = '#00843d' // the customer's own figures
 const GREY = '#9aa7b4'
 const GREEN = '#0b7a4b'
 const RED = '#b42318'
-const LINE = '#e2e4ec'
-const MUTED = '#5f667a'
+const LINE = '#dae5dd'
+const MUTED = '#586b60'
 
 const wholeEur = new Intl.NumberFormat('fi-FI', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 const eur = (n: number) => wholeEur.format(Math.round(n))

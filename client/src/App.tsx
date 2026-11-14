@@ -35,6 +35,7 @@ import { FutureCard } from './FutureCall'
 import { makeFuture } from './future'
 import { makeStatus, type Part, type Status } from './status'
 import { makeInsights } from './insights'
+import { MorningBriefing } from './Briefing'
 
 const SESSION_KEY = 'customerId'
 
@@ -403,6 +404,8 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           </button>
         </div>
       </header>
+
+      <MorningBriefing customerId={customerId} context={chatContext} mode={status.name} />
 
       <nav className="mb-6 flex gap-2 overflow-x-auto text-sm">
         {tabs.map(([id, name]) => (

@@ -1,12 +1,14 @@
 @import "tailwindcss";
 
 @theme {
-  /* S-Pankki: midnight ink, one vivid cobalt, flat white cards on a cool grey page. */
-  --color-ink: #0c1030;
-  --color-accent: #2b3fff;
-  --color-line: #e2e4ec;
-  --color-muted: #5f667a;
-  --color-paper: #f1f2f6;
+  /* S-Pankki: deep forest ink, one S-green accent, flat white cards on a soft green-grey page. */
+  --color-ink: #0b2a1d;
+  --color-accent: #00843d;
+  --color-accent-deep: #005c2b;
+  --color-accent-soft: #e3f2e8;
+  --color-line: #dae5dd;
+  --color-muted: #586b60;
+  --color-paper: #eff4f0;
   --color-credit: #0b7a4b;
 
   /* Text in Schibsted Grotesk; headings and big figures in Bricolage Grotesque. */
@@ -199,4 +201,17 @@
 body {
   background: var(--color-paper);
   color: var(--color-ink);
+}
+
+/* The morning briefing's play button, until it has been played today (src/Briefing.tsx). */
+.briefing-pulse {
+  animation: briefing-pulse 1.8s ease-out infinite;
+}
+@keyframes briefing-pulse {
+  from {
+    box-shadow: 0 0 0 0 rgb(0 92 43 / 0.4);
+  }
+  to {
+    box-shadow: 0 0 0 8px rgb(0 92 43 / 0);
+  }
 }

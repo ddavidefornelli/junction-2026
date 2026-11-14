@@ -8,7 +8,7 @@ import type { Suggestion } from './mcc'
 // accept it, then follow how it is going. The accepted challenge is kept in
 // this browser for this customer ID.
 
-const MARK = '#2b3fff' // the customer's own figures
+const MARK = '#00843d' // the customer's own figures
 const GREEN = '#0b7a4b'
 const LINE = '#e2e4ec'
 const MUTED = '#5f667a'

@@ -8,7 +8,7 @@ import { useId } from 'react'
 const SKIN = '#ffd3b4'
 const HAIR = '#f3f5fa'
 const HAIR_EDGE = '#c6ccd8'
-const INK = '#0c1030'
+const INK = '#0b2a1d'
 
 export function WalterAvatar({ className = 'h-10 w-10', talking = false }: { className?: string; talking?: boolean }) {
   const id = useId().replace(/:/g, '')
@@ -24,8 +24,8 @@ export function WalterAvatar({ className = 'h-10 w-10', talking = false }: { cla
           <circle cx="32" cy="32" r="32" />
         </clipPath>
         <radialGradient id={`${id}-sky`} cx="50%" cy="45%" r="60%">
-          <stop offset="0" stopColor="#6f7dff" />
-          <stop offset="1" stopColor="#2b3fff" />
+          <stop offset="0" stopColor="#3fb36a" />
+          <stop offset="1" stopColor="#00843d" />
         </radialGradient>
       </defs>
       <g clipPath={`url(#${id}-frame)`}>

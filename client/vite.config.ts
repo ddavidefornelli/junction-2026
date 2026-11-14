@@ -3,7 +3,7 @@ import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { ClassifyError, classifyPurchases, type LayaConfig } from './laya.ts'
-import { ChatError, chatReply, mortgageSteps, type ChatConfig } from './chat.ts'
+import { ChatError, chatReply, morningBriefing, mortgageSteps, type ChatConfig } from './chat.ts'
 import { ScenarioError, whatIfScenarios } from './scenarios.ts'
 import { TtsError, speech, type TtsConfig } from './tts.ts'
 import { transcribe } from './stt.ts'
@@ -15,6 +15,7 @@ const TABLES = ['customers', 'transactions', 'mortgage_applications']
 //   POST /api/classify {purchases}       essential / flexible / saving labels from Laya (laya.ts)
 //   POST /api/chat {context, messages, ledger, spoken, future}  the assistant's reply (or the customer's future self's) from OpenAI, streamed as plain text (chat.ts)
 //   POST /api/mortgage-steps {context}    AI-written next steps towards the mortgage, as JSON (chat.ts)
+//   POST /api/briefing {context, today, mode}  the one-minute morning briefing, as JSON (chat.ts)
 //   POST /api/scenarios {context}         Walter's personalised what-if questions, as JSON (scenarios.ts)
 //   POST /api/tts {text, voice}           Walter's voice (or the future self's) from ElevenLabs, as MP3 audio (tts.ts)
 //   POST /api/stt {audio, mimeType}       what the customer said, from ElevenLabs Scribe, as {text} (stt.ts)
@@ -26,13 +27,14 @@ function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig, t
     configureServer(server) {
       server.middlewares.use('/api', async (req, res) => {
         const { pathname, search } = new URL(req.url ?? '/', 'http://localhost')
-        if (req.method === 'POST' && (pathname === '/classify' || pathname === '/chat' || pathname === '/mortgage-steps' || pathname === '/scenarios' || pathname === '/tts' || pathname === '/stt')) {
+        if (req.method === 'POST' && (pathname === '/classify' || pathname === '/chat' || pathname === '/mortgage-steps' || pathname === '/briefing' || pathname === '/scenarios' || pathname === '/tts' || pathname === '/stt')) {
           res.setHeader('Content-Type', 'application/json')
           try {
             let raw = ''
             for await (const chunk of req) raw += chunk
             const body = JSON.parse(raw)
             if (pathname === '/mortgage-steps') return res.end(JSON.stringify(await mortgageSteps(chat, body.context)))
+            if (pathname === '/briefing') return res.end(JSON.stringify(await morningBriefing(chat, body.context, body.today, body.mode)))
             if (pathname === '/tts') {
               const audio = await speech(tts, body.text, body.voice === 'future')
               res.setHeader('Content-Type', 'audio/mpeg')

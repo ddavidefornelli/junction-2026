@@ -139,6 +139,21 @@ export default async function handler(req: Request, res: Response) {
     }
   }
 
+  if (resource === 'briefing') {
+    if (req.method !== 'POST') return res.status(405).end()
+
+    try {
+      const { morningBriefing } = await import('../chat.js')
+      const { context, today, mode } = (req.body ?? {}) as { context?: unknown; today?: unknown; mode?: unknown }
+      const config = { apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL }
+      return res.json(await morningBriefing(config, context, today, mode))
+    } catch (error) {
+      const { status, message } = failure(error)
+      console.error('[api/briefing] Request failed', { status, message, error })
+      return res.status(status).json({ error: message })
+    }
+  }
+
   if (!TABLES.has(resource ?? '')) return res.status(404).end()
   if (req.method !== 'GET') return res.status(405).end()
 
