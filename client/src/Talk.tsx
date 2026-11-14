@@ -10,11 +10,13 @@ type Phase = 'off' | 'listening' | 'transcribing' | 'answering'
 // said to Walter and resolves with his reply once he has finished saying it
 // (null when he could not answer). `who` and `avatar` put someone else on the
 // line instead of Walter (the customer's future self, FutureCall.tsx).
-export function Talk({ ask, disabled, who = 'Walter', avatar }: {
+export function Talk({ ask, disabled, who = 'Walter', avatar, onActive }: {
   ask: (text: string) => Promise<string | null>
   disabled: boolean
   who?: string
   avatar?: ReactNode
+  // Told when a spoken conversation starts (true) and ends (false).
+  onActive?: (active: boolean) => void
 }) {
   const voice = useVoice()
   const [phase, setPhase] = useState<Phase>('off')
@@ -38,6 +40,10 @@ export function Talk({ ask, disabled, who = 'Walter', avatar }: {
     setLevel(0)
     setNote(message)
   }
+
+  const onActiveRef = useRef(onActive)
+  onActiveRef.current = onActive
+  useEffect(() => onActiveRef.current?.(phase !== 'off'), [phase !== 'off'])
 
   // The conversation ends when the panel goes (the chat closes, or back to typing).
   useEffect(() => () => end(), [])

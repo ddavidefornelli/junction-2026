@@ -61,6 +61,9 @@ function FutureDialog({ future: f, context, age, onClose }: { future: Future; co
   const [busy, setBusy] = useState(false)
   const [greeted, setGreeted] = useState(false)
   const [error, setError] = useState(false)
+  // A spoken conversation is going on: the ready-made questions wait, so two answers never overlap.
+  const [conversing, setConversing] = useState(false)
+  const asking = useRef(false)
   const messages = useRef<ChatMessage[]>([])
   const call = useRef(0) // replies to an earlier call are dropped
 
@@ -73,10 +76,18 @@ function FutureDialog({ future: f, context, age, onClose }: { future: Future; co
     call.current++
     stopSpeaking()
   }, [])
+  // Leaving the tab or the app hangs up too: the call does not go on unseen.
+  useEffect(() => {
+    const leave = () => document.hidden && hangUp()
+    document.addEventListener('visibilitychange', leave)
+    return () => document.removeEventListener('visibilitychange', leave)
+  }, [])
 
   // The future self's answer to `text`, once it has been said out loud (null when there is none).
   async function say(text: string, which: boolean, shown = true): Promise<string | null> {
-    if (context === null) return null
+    // One answer at a time: a second question while one is being answered is dropped.
+    if (context === null || asking.current) return null
+    asking.current = true
     const id = call.current
     const sent: ChatMessage[] = [...messages.current, { role: 'user', content: text }]
     setAsked(shown ? text : null)
@@ -97,19 +108,25 @@ function FutureDialog({ future: f, context, age, onClose }: { future: Future; co
       setBusy(false)
       setError(true)
       return null
+    } finally {
+      if (id === call.current) asking.current = false
     }
   }
 
   function dial(which: boolean) {
-    call.current++
+    const id = ++call.current
+    asking.current = false
+    stopSpeaking() // the other you stops mid-sentence
     messages.current = []
     setChanged(which)
     setGreeted(false)
-    void say('(The call connects.)', which, false).then(() => setGreeted(true))
+    void say('(The call connects.)', which, false).then(() => id === call.current && setGreeted(true))
   }
 
   function hangUp() {
     call.current++
+    asking.current = false
+    setConversing(false)
     stopSpeaking()
     setChanged(null)
     setBusy(false)
@@ -208,7 +225,7 @@ function FutureDialog({ future: f, context, age, onClose }: { future: Future; co
 
             <div className="mt-3 flex flex-wrap justify-center gap-2">
               {QUESTIONS.map((q) => (
-                <button key={q} onClick={() => void say(q, changed)} disabled={busy || talking}
+                <button key={q} onClick={() => void say(q, changed)} disabled={busy || talking || conversing || !greeted}
                   className="rounded-full border border-line px-3 py-1.5 text-xs font-medium hover:border-ink disabled:opacity-40">
                   {q}
                 </button>
@@ -217,6 +234,7 @@ function FutureDialog({ future: f, context, age, onClose }: { future: Future; co
 
             <Talk
               who="Future you"
+              onActive={setConversing}
               ask={(text) => say(text, changed)}
               disabled={!greeted || busy || talking}
               avatar={

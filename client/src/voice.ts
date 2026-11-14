@@ -18,6 +18,8 @@ let audio: HTMLAudioElement | null = null
 let request: AbortController | null = null
 // Ends the promise of the speak() call in progress.
 let finished: (() => void) | null = null
+// Goes up each time speech is stopped: a speak() from before then must not start playing.
+let stops = 0
 
 function readEnabled() {
   try {
@@ -89,6 +91,7 @@ export function speakableText(reply: string): string {
 }
 
 export function stopSpeaking() {
+  stops++
   finished?.()
   finished = null
   request?.abort()
@@ -108,6 +111,7 @@ export async function speak(reply: string, voice?: 'future'): Promise<void> {
   const text = speakableText(reply)
   stopSpeaking()
   if (!text) return
+  const mine = stops
   const controller = new AbortController()
   request = controller
   set({ loading: true })
@@ -123,7 +127,7 @@ export async function speak(reply: string, voice?: 'future'): Promise<void> {
       throw new Error(error ?? `Request failed (${res.status})`)
     }
     const blob = await res.blob()
-    if (controller.signal.aborted) return
+    if (controller.signal.aborted || mine !== stops) return
     const player = new Audio(URL.createObjectURL(blob))
     audio = player
     request = null
@@ -142,10 +146,19 @@ export async function speak(reply: string, voice?: 'future'): Promise<void> {
       player.addEventListener('error', () => resolve())
     })
     await player.play()
+    // Stopped while the browser was starting playback: make sure it stays silent.
+    if (mine !== stops) return player.pause()
     await ended
   } catch (e) {
-    if (controller.signal.aborted) return
+    if (controller.signal.aborted || mine !== stops) return
     console.error('[voice] Could not speak', e)
     stopSpeaking()
   }
+}
+
+// Nobody speaks to a page that is not being looked at: leaving the tab, the
+// app or the page cuts the voice off instead of letting it play on unseen.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => document.hidden && stopSpeaking())
+  window.addEventListener('pagehide', stopSpeaking)
 }
