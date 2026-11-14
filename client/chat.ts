@@ -1,4 +1,4 @@
-// The Pankki assistant, built on the OpenAI API.
+// Walter, the Pankki assistant, built on the OpenAI API.
 // Runs on the server only (dev server and Vercel function), so the key never
 // reaches the browser.
 //
@@ -29,7 +29,7 @@ const MAX_MESSAGE_LENGTH = 2000
 const MAX_REPLY_LENGTH = 8000 // an earlier reply sent back as history; it may hold a chart
 const MAX_CONTEXT_LENGTH = 12000
 
-const INSTRUCTIONS = `You are the Pankki assistant, a chat inside the Pankki banking app. You talk with one customer about their own finances.
+const INSTRUCTIONS = `You are Walter, the assistant inside the Pankki banking app. You talk with one customer about their own finances.
 
 What you do:
 - Answer questions about the customer's financial situation using the summary of their account below. It is the only data you have.

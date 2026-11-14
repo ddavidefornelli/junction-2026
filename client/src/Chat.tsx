@@ -86,7 +86,7 @@ export function Chat({
           )}
           {error && (
             <p className="text-sm text-red-700">
-              The assistant could not answer.{' '}
+              Walter could not answer.{' '}
               {last?.role === 'user' && (
                 <button onClick={() => ask(last.content)} className="underline underline-offset-4">
                   Try again

@@ -18,6 +18,7 @@ import { deadline, goalLabel, goalStatement, loadGoalProfile, monthYear, saveGoa
 import { makePlan, txId, type Plan } from './plan'
 import { kindOf, suggestions, type Suggestion } from './mcc'
 import { Chat } from './Chat'
+import { WalterAvatar } from './WalterAvatar'
 import { buildContext, type ChatMessage } from './assistant'
 
 const SESSION_KEY = 'customerId'
@@ -406,10 +407,10 @@ function Overview({
         <Card>
           <div className="flex h-full min-h-40 flex-col p-5">
             <div className="flex items-center gap-3 border-b border-line pb-3">
-              <span aria-hidden="true" className="flex h-9 w-9 items-center justify-center rounded-full bg-ink text-sm font-semibold text-white">P</span>
+              <WalterAvatar />
               <div>
-                <h2 className="text-sm font-medium">Pankki assistant</h2>
-                <p className="text-xs text-muted">Ask about your finances</p>
+                <h2 className="text-sm font-medium">Walter</h2>
+                <p className="text-xs text-muted">Your Pankki assistant</p>
               </div>
             </div>
             <div className="my-4 rounded-lg bg-paper p-3 text-sm">
@@ -419,7 +420,7 @@ function Overview({
                   <span className="mt-0.5 block font-medium">{goalStatement(goal)}</span>
                 </>
               ) : (
-                'Hi! Ask me how your finances are doing, or what to do next.'
+                "Hi, I'm Walter. Ask me how your finances are doing, or what to do next."
               )}
             </div>
             <button
