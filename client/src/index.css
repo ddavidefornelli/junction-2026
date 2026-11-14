@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  /* S-Pankki: deep forest ink, one S-green accent, flat white cards on a soft green-grey page. */
+  /* White: deep forest ink, one S-green accent, flat white cards on a soft green-grey page. */
   --color-ink: #0b2a1d;
   --color-accent: #00843d;
   --color-accent-deep: #005c2b;
@@ -157,6 +157,18 @@
   animation: walter-stache 0.5s ease-in-out infinite alternate;
 }
 
+/* Easter egg: Walter's alter ego spins in (src/WalterAvatar.tsx). */
+.walter-reveal {
+  animation: walter-reveal 0.6s ease-out;
+}
+.walter-reveal.walter-talking {
+  animation: walter-reveal 0.6s ease-out, walter-ring 1.4s ease-out infinite;
+}
+@keyframes walter-reveal {
+  from { transform: rotate(-360deg) scale(0.4); }
+  to { transform: rotate(0deg) scale(1); }
+}
+
 /* The apple in a future (src/FutureCall.tsx) ripens or bruises as the year changes. */
 .apple-morph * {
   transition: fill 0.4s ease, opacity 0.4s ease;
@@ -169,6 +181,7 @@
   .animate-fade-up,
   .flow-line,
   .walter-talking,
+  .walter-reveal,
   .walter-mouth,
   .walter-bob,
   .walter-blink,

@@ -166,7 +166,7 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
   return (
     <main className="flex min-h-dvh items-center justify-center px-4">
       <form onSubmit={submit} className="w-full max-w-xs">
-        <h1 className="mb-8 text-5xl font-extrabold tracking-tight">S-Pankki</h1>
+        <h1 className="mb-8 text-5xl font-extrabold tracking-tight">White</h1>
         {loggedOut && (
           <p role="status" className="mb-5 rounded-md border border-credit/30 bg-credit/5 px-3 py-2 text-sm text-credit">
             You are logged out. Your session was cleared from this tab.
@@ -223,7 +223,7 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
         <div className="mt-6 border-t border-line pt-4">
           <SecureNote>
             {linkEncrypted()
-              ? 'Your connection to S-Pankki is encrypted. What you type here cannot be read on the way.'
+              ? 'Your connection to White is encrypted. What you type here cannot be read on the way.'
               : 'Local development build. On the live site this connection is encrypted.'}
           </SecureNote>
         </div>
@@ -396,7 +396,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   return (
     <div className="mx-auto min-h-dvh max-w-2xl px-4 pb-28" data-mode={status.mode} style={{ '--color-accent': status.accent } as CSSProperties}>
       <header className="flex items-center justify-between py-5">
-        <span className="font-display text-2xl font-extrabold tracking-tight">S-Pankki</span>
+        <span className="font-display text-2xl font-extrabold tracking-tight">White</span>
         <div className="flex items-center gap-3 text-sm sm:gap-4">
           <span className="text-muted">{customerId}</span>
           <button onClick={onLogout} className="underline underline-offset-4">
@@ -1224,10 +1224,10 @@ function NextSteps({ facts: f, steps, step, error, loadError, onRetry }: {
 
         {f?.rejected && (
           <p className="mt-3 text-xs text-muted">
-            Gaps are measured against typical approved applications ({percent(APPROVED_EQUITY_SHARE)} equity, collateral worth {percent(APPROVED_COLLATERAL_COVER)} of the loan), not a fixed bank rule. Suggestions are AI-generated; talk to an S-Pankki advisor before deciding.
+            Gaps are measured against typical approved applications ({percent(APPROVED_EQUITY_SHARE)} equity, collateral worth {percent(APPROVED_COLLATERAL_COVER)} of the loan), not a fixed bank rule. Suggestions are AI-generated; talk to an White advisor before deciding.
           </p>
         )}
-        {f && !f.rejected && <p className="mt-3 text-xs text-muted">Suggestions are AI-generated; talk to an S-Pankki advisor before deciding.</p>}
+        {f && !f.rejected && <p className="mt-3 text-xs text-muted">Suggestions are AI-generated; talk to an White advisor before deciding.</p>}
       </div>
     </Card>
   )

@@ -1,4 +1,4 @@
-# Walter: a personal economic trainer for S-mobiili
+# Walter: a personal economic trainer for White
 
 Junction 2026 · S-Pankki challenge "Personal Economic Trainer". An independent hackathon prototype on S-Pankki's synthetic dataset, not an official S-Pankki service.
 

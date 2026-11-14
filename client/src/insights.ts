@@ -203,7 +203,7 @@ export function makeInsights(d: {
       ].filter(Boolean).join(' ').trim() + '.',
       ask: `I have ${lump ? `${eur(lump)} above my buffer` : 'a full buffer'}${monthly ? ` and about ${eur(monthly)} left each month` : ''}. How should I start investing it?`,
       chart: { kind: 'growth', kept: keptLine, invested },
-      note: `Example at ${EXAMPLE_RETURN * 100}% a year over ${EXAMPLE_YEARS} years, not a forecast or investment advice: funds can lose value. Talk to an S-Pankki advisor before deciding.`,
+      note: `Example at ${EXAMPLE_RETURN * 100}% a year over ${EXAMPLE_YEARS} years, not a forecast or investment advice: funds can lose value. Talk to an White advisor before deciding.`,
     })
   }
 

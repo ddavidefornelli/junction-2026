@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 // claims are worded from the code, not from what would sound reassuring.
 const SESSION_START_KEY = 'sessionStart'
 
-// Whether the browser's link to S-Pankki is encrypted. It is on the deployed site
+// Whether the browser's link to White is encrypted. It is on the deployed site
 // (HTTPS); a local development server is plain HTTP, and says so.
 export const linkEncrypted = () => {
   try {
@@ -130,11 +130,11 @@ export function SecureLoading({ text = 'Fetching your account' }: { text?: strin
   )
 }
 
-// You → S-Pankki → the database, with the traffic between them flowing as sealed packets.
+// You → White → the database, with the traffic between them flowing as sealed packets.
 function Channel({ className = '' }: { className?: string }) {
   const stops = [
     ['You', 'This browser tab'],
-    ['S-Pankki', 'Holds the keys'],
+    ['White', 'Holds the keys'],
     ['Your data', 'Encrypted storage'],
   ]
   return (
