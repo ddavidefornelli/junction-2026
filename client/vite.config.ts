@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { ClassifyError, classifyPurchases, type LayaConfig } from './laya'
 import { ChatError, chatReply, mortgageSteps, type ChatConfig } from './chat'
+import { ScenarioError, whatIfScenarios } from './scenarios'
 
 const TABLES = ['customers', 'transactions', 'mortgage_applications']
 
@@ -12,6 +13,7 @@ const TABLES = ['customers', 'transactions', 'mortgage_applications']
 //   POST /api/classify {goal, purchases}  good / bad / neutral verdicts from Laya (laya.ts)
 //   POST /api/chat {context, messages, ledger}  the assistant's reply from OpenAI, streamed as plain text (chat.ts)
 //   POST /api/mortgage-steps {context}    AI-written next steps towards the mortgage, as JSON (chat.ts)
+//   POST /api/scenarios {context}         Walter's personalised what-if questions, as JSON (scenarios.ts)
 // The dev server calls Supabase, Laya and OpenAI itself with keys from server/.env
 // (or client/.env for Laya); the keys never reach the browser.
 function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig): Plugin {
@@ -20,13 +22,14 @@ function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig): 
     configureServer(server) {
       server.middlewares.use('/api', async (req, res) => {
         const { pathname, search } = new URL(req.url ?? '/', 'http://localhost')
-        if (req.method === 'POST' && (pathname === '/classify' || pathname === '/chat' || pathname === '/mortgage-steps')) {
+        if (req.method === 'POST' && (pathname === '/classify' || pathname === '/chat' || pathname === '/mortgage-steps' || pathname === '/scenarios')) {
           res.setHeader('Content-Type', 'application/json')
           try {
             let raw = ''
             for await (const chunk of req) raw += chunk
             const body = JSON.parse(raw)
             if (pathname === '/mortgage-steps') return res.end(JSON.stringify(await mortgageSteps(chat, body.context)))
+            if (pathname === '/scenarios') return res.end(JSON.stringify(await whatIfScenarios(chat, body.context)))
             if (pathname === '/chat') {
               const reply = await chatReply(chat, body.context, body.messages, body.ledger)
               res.setHeader('Content-Type', 'text/plain; charset=utf-8')
@@ -39,7 +42,7 @@ function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig): 
             }
             res.end(JSON.stringify(await classifyPurchases(laya, body.goal, body.purchases)))
           } catch (e) {
-            const known = e instanceof ClassifyError || e instanceof ChatError
+            const known = e instanceof ClassifyError || e instanceof ChatError || e instanceof ScenarioError
             res.statusCode = known ? e.status : 400
             res.end(JSON.stringify({ error: known ? e.message : 'Bad request' }))
           }

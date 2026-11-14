@@ -282,6 +282,24 @@ export function parseReply(reply: string): (string | Chart | Lookup)[] {
   return parts
 }
 
+// Ask Walter for personalised what-if questions, without adding a chat message.
+export async function getWhatIfScenarios(context: string, signal?: AbortSignal): Promise<string[]> {
+  const res = await fetch('/api/scenarios', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ context }),
+    signal,
+  })
+  if (!res.ok) {
+    const error = (await res.json().catch(() => null))?.error
+    throw new Error(error ?? `Request failed (${res.status})`)
+  }
+  const questions: unknown = await res.json()
+  if (!Array.isArray(questions) || !questions.length || !questions.every((q) => typeof q === 'string'))
+    throw new Error('No scenarios available')
+  return questions
+}
+
 // Asks for the reply to the last message in `messages`. It arrives piece by
 // piece: `onText` gets the reply so far each time it grows. Resolves with the
 // whole reply. `ledger` is what the assistant can look things up in (see

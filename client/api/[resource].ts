@@ -71,6 +71,21 @@ export default async function handler(req: Request, res: Response) {
     }
   }
 
+  if (resource === 'scenarios') {
+    if (req.method !== 'POST') return res.status(405).end()
+
+    try {
+      const { whatIfScenarios } = await import('../scenarios.js')
+      const { context } = (req.body ?? {}) as { context?: unknown }
+      const config = { apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL }
+      return res.json(await whatIfScenarios(config, context))
+    } catch (error) {
+      const { status, message } = failure(error)
+      console.error('[api/scenarios] Request failed', { status, message, error })
+      return res.status(status).json({ error: message })
+    }
+  }
+
   if (resource === 'mortgage-steps') {
     if (req.method !== 'POST') return res.status(405).end()
 

@@ -22,6 +22,7 @@ import { BASKET_NAMES, BasketsCard } from './BasketsCard'
 import { Chat } from './Chat'
 import { WalterAvatar } from './WalterAvatar'
 import { ChatDialog } from './ChatDialog'
+import { WhatIfDialog } from './WhatIfDialog'
 import { WellnessApple } from './WellnessApple'
 import { buildContext, ledgerOf, type ChatMessage } from './assistant'
 import { AnalysisSteps, useStagedProgress } from './Analysis'
@@ -36,7 +37,6 @@ const PLAN_STEPS = [
 ] as const
 
 const SESSION_KEY = 'customerId'
-const WHAT_IF_QUESTION = 'How much could I save each month if I cut my spending on dining out (Restaurants) by 20%?'
 
 const STEPS_ANALYSIS = [
   'Reading your mortgage application',
@@ -206,10 +206,12 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   const baskets = useMemo(() => (allTxs ? makeBaskets(allTxs) : null), [allTxs])
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatOpen, setChatOpen] = useState(false)
+  const [scenariosOpen, setScenariosOpen] = useState(false)
   const [chatPrompt, setChatPrompt] = useState<{ id: number; text: string } | null>(null)
   const nextChatPrompt = useRef(0)
-  const openWhatIf = () => {
-    setChatPrompt({ id: ++nextChatPrompt.current, text: WHAT_IF_QUESTION })
+  const askScenario = (question: string) => {
+    setScenariosOpen(false)
+    setChatPrompt({ id: ++nextChatPrompt.current, text: question })
     setChatOpen(true)
   }
   // What the assistant knows: the figures on screen. Null until the full history has loaded (or failed to).
@@ -377,7 +379,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           error={wellnessError}
           onBack={() => setView('overview')}
           onShowWellness={() => setView('wellness')}
-          onWhatIf={openWhatIf}
+          onWhatIf={() => setScenariosOpen(true)}
         />
       ) : view === 'transactions' ? (
         <Transactions
@@ -422,6 +424,13 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
             }
           />
         )
+      )}
+      {scenariosOpen && (
+        <WhatIfDialog
+          context={chatContext}
+          onPick={askScenario}
+          onClose={() => setScenariosOpen(false)}
+        />
       )}
       {chatOpen && (
         <ChatDialog onClose={() => {
