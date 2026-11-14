@@ -49,3 +49,25 @@ test('requires a configured model and rejects invalid purchases and responses', 
     (e) => e instanceof ClassifyError && e.status === 502,
   )
 })
+
+test('asks Laya each question once and retries after a failure', async () => {
+  let calls = 0
+  let down = true
+  globalThis.fetch = async (_url, init) => {
+    calls++
+    if (down) return new Response('', { status: 500 })
+    const q = JSON.parse(init.body).questions.q
+    return new Response(JSON.stringify({ answers: { q: q.type === 'choice' ? { choice: 'd' } : { noul: 0.9 } } }), { status: 200 })
+  }
+  const config = { baseUrl: 'http://cache.test' }
+  const kinds = [{ category: 'travel', transaction_type: 'card' }]
+  await assert.rejects(classifyPurchases(config, 'Spend less', kinds), (e) => e instanceof ClassifyError && e.status === 502)
+  down = false
+  calls = 0
+  assert.deepEqual(await classifyPurchases(config, 'Spend less', kinds), ['bad'])
+  assert.equal(calls, 3)
+  assert.deepEqual(await Promise.all([classifyPurchases(config, 'Spend less', kinds), classifyPurchases(config, 'Spend less', kinds)]), [['bad'], ['bad']])
+  assert.equal(calls, 3) // answered from memory
+  await classifyPurchases(config, 'Save for a home', kinds)
+  assert.equal(calls, 5) // new goal: the kind of spending is already known
+})

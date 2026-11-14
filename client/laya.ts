@@ -14,6 +14,7 @@ export type PurchaseKind = { category: string | null; transaction_type: string |
 export type LayaConfig = {
   // Where Laya runs. Unset: the hosted API (api.laya.studio).
   // For server/laya_server.py on this machine: http://127.0.0.1:8000
+  // For the laya-ai.com hosted API: https://api.laya-ai.com (with apiKey)
   baseUrl?: string
   // Required by the hosted API only.
   apiKey?: string
@@ -30,6 +31,8 @@ export class ClassifyError extends Error {
 const HOSTED_URL = 'https://api.laya.studio'
 const MAX_KINDS = 64
 const MAX_GOAL_LENGTH = 300
+const MAX_CACHED_ANSWERS = 5000
+const answers = new Map<string, Promise<unknown>>()
 
 // The wording, the state shapes and even the one-letter labels below were
 // picked by measuring the model's answers; change them only with a re-test.
@@ -100,7 +103,8 @@ export async function classifyPurchases(
       res = await fetch(`${baseUrl}/v1/systemone`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ state, questions: { q: question } }),
+        // Hosts that serve several models need Laya named; the local server ignores it.
+        body: JSON.stringify({ model: 'english', state, questions: { q: question } }),
       })
     } catch {
       throw new ClassifyError(502, `Could not reach Laya at ${baseUrl}`)
@@ -115,12 +119,32 @@ export async function classifyPurchases(
     if (!answer || typeof answer !== 'object') throw new ClassifyError(502, 'Unexpected response from Laya')
     return answer as Record<string, unknown>
   }
-  const yes = async (state: unknown, question: object) => {
-    const value = (await ask(state, question)).noul
-    if (typeof value !== 'number' || !Number.isFinite(value))
-      throw new ClassifyError(502, 'Unexpected response from Laya')
-    return value > 0.5
+  // Answers depend only on the question asked, and customers share most of
+  // them (the same purchase kinds, the same preset goals), so each is fetched
+  // once per running server and reused. Failures are not kept.
+  function once<T>(state: unknown, question: object, read: (answer: Record<string, unknown>) => T): Promise<T> {
+    const key = JSON.stringify([baseUrl, state, question])
+    let answer = answers.get(key) as Promise<T> | undefined
+    if (!answer) {
+      if (answers.size >= MAX_CACHED_ANSWERS) answers.clear()
+      answer = ask(state, question).then(read)
+      answers.set(key, answer)
+      answer.catch(() => answers.get(key) === answer && answers.delete(key))
+    }
+    return answer
   }
+  const yes = (state: unknown, question: object) =>
+    once(state, question, ({ noul }) => {
+      if (typeof noul !== 'number' || !Number.isFinite(noul))
+        throw new ClassifyError(502, 'Unexpected response from Laya')
+      return noul > 0.5
+    })
+  const spendingKind = (state: unknown) =>
+    once(state, SPENDING_QUESTION, ({ choice }) => {
+      if (choice !== 'n' && choice !== 'd' && choice !== 's')
+        throw new ClassifyError(502, 'Unexpected response from Laya')
+      return choice
+    })
 
   // Resolve this shared question before spawning the per-kind requests, so a
   // failed round cannot leave its promise rejected and unobserved.
@@ -129,12 +153,10 @@ export async function classifyPurchases(
     (kinds as PurchaseKind[]).map(async (k) => {
       const category = words(k.category)
       const [spending, sameTopic] = await Promise.all([
-        ask({ category, type: words(k.transaction_type) }, SPENDING_QUESTION),
+        spendingKind({ category, type: words(k.transaction_type) }),
         yes({ goal: goalText, spending: category.toLowerCase() }, SAME_TOPIC_QUESTION),
       ])
-      if (spending.choice !== 'n' && spending.choice !== 'd' && spending.choice !== 's')
-        throw new ClassifyError(502, 'Unexpected response from Laya')
-      return verdictFor(spending.choice, savingGoal, sameTopic)
+      return verdictFor(spending, savingGoal, sameTopic)
     }),
   )
 }
