@@ -19,12 +19,17 @@ import { makePlan, txId, type Plan } from './plan'
 import { kindOf, suggestions, type Suggestion } from './mcc'
 import { makeBaskets, type Baskets } from './baskets'
 import { BASKET_NAMES, BasketsCard } from './BasketsCard'
+import { BenchmarkCard } from './BenchmarkCard'
+import { AreaCard } from './AreaCard'
+import { makeArea, type AreaView } from './area'
+import { makeBenchmark, type Benchmark } from './benchmarks'
 import { Chat } from './Chat'
 import { WalterAvatar } from './WalterAvatar'
 import { ChatDialog } from './ChatDialog'
 import { WellnessApple } from './WellnessApple'
 import { buildContext, ledgerOf, type ChatMessage } from './assistant'
 import { AnalysisSteps, useStagedProgress } from './Analysis'
+import { CipherText, ProtectedBadge, SecureLoading, SecureNote, ShieldSeal, clearSession, linkEncrypted, markSessionStart } from './Security'
 import { APPROVED_COLLATERAL_COVER, APPROVED_EQUITY_SHARE, getMortgageSteps, mortgageFacts, type MortgageFacts, type MortgageStep } from './mortgage'
 
 const PLAN_STEPS = [
@@ -45,12 +50,16 @@ const STEPS_ANALYSIS = [
 
 export default function App() {
   const [customerId, setCustomerId] = useState(() => sessionStorage.getItem(SESSION_KEY))
+  const [loggedOut, setLoggedOut] = useState(false)
 
   if (!customerId) {
     return (
       <Login
+        loggedOut={loggedOut}
         onLogin={(id) => {
           sessionStorage.setItem(SESSION_KEY, id)
+          markSessionStart()
+          setLoggedOut(false)
           setCustomerId(id)
         }}
       />
@@ -61,15 +70,28 @@ export default function App() {
       key={customerId}
       customerId={customerId}
       onLogout={() => {
-        sessionStorage.removeItem(SESSION_KEY)
+        clearSession() // nothing of the session stays in this tab
+        setLoggedOut(true)
         setCustomerId(null)
       }}
     />
   )
 }
 
-function Login({ onLogin }: { onLogin: (id: string) => void }) {
+// How long the "secure session started" moment stays before the account opens.
+const SEAL_MS = 1500
+
+function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOut: boolean }) {
   const [id, setId] = useState('')
+  // The customer whose session has just been secured; the account opens a beat later.
+  const [sealed, setSealed] = useState<string | null>(null)
+  useEffect(() => {
+    if (!sealed) return
+    let reduced = false
+    try { reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch { /* keep the default */ }
+    const timer = setTimeout(() => onLogin(sealed), reduced ? 400 : SEAL_MS)
+    return () => clearTimeout(timer)
+  }, [sealed, onLogin])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -81,7 +103,7 @@ function Login({ onLogin }: { onLogin: (id: string) => void }) {
     setError('')
     try {
       const customer = await getCustomer(value)
-      if (customer) onLogin(customer.customer_id)
+      if (customer) setSealed(customer.customer_id)
       else setError('Unknown customer ID')
     } catch (error) {
       console.error('[login] Could not look up customer', error)
@@ -91,10 +113,27 @@ function Login({ onLogin }: { onLogin: (id: string) => void }) {
     }
   }
 
+  if (sealed) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center px-4">
+        <div role="status" className="animate-fade-up text-center">
+          <ShieldSeal className="mx-auto size-16" />
+          <p className="mt-4 font-medium">Secure session started</p>
+          <p className="mt-1 text-sm text-muted">Opening your account…</p>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="flex min-h-dvh items-center justify-center px-4">
       <form onSubmit={submit} className="w-full max-w-xs">
         <h1 className="mb-8 text-2xl font-semibold tracking-tight">Pankki</h1>
+        {loggedOut && (
+          <p role="status" className="mb-5 rounded-md border border-credit/30 bg-credit/5 px-3 py-2 text-sm text-credit">
+            You are logged out. Your session was cleared from this tab.
+          </p>
+        )}
         <label htmlFor="customer-id" className="mb-1.5 block text-sm text-muted">
           Customer ID
         </label>
@@ -111,8 +150,15 @@ function Login({ onLogin }: { onLogin: (id: string) => void }) {
           disabled={busy}
           className="mt-4 w-full rounded-md bg-ink py-2.5 font-medium text-white disabled:opacity-50"
         >
-          Log in
+          {busy ? 'Checking…' : 'Log in'}
         </button>
+        <div className="mt-6 border-t border-line pt-4">
+          <SecureNote>
+            {linkEncrypted()
+              ? 'Your connection to Pankki is encrypted. What you type here cannot be read on the way.'
+              : 'Local development build. On the live site this connection is encrypted.'}
+          </SecureNote>
+        </div>
       </form>
     </main>
   )
@@ -125,6 +171,8 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [mortgage, setMortgage] = useState<Mortgage | null>(null)
+  const [age, setAge] = useState<number | null>(null) // for the population benchmark
+  const [postalCode, setPostalCode] = useState<string | null>(null) // for the area card
   const [wellness, setWellness] = useState<Wellness | null>(null)
   const [answers, setAnswers] = useState<WellnessAnswers>(() => {
     try {
@@ -202,14 +250,22 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   const planStep = goal && !planAnalysis.done ? planAnalysis.step : null
   const tips = useMemo(() => (allTxs ? suggestions(allTxs, plan ? !plan.reachable : false) : []), [allTxs, plan])
   const baskets = useMemo(() => (allTxs ? makeBaskets(allTxs) : null), [allTxs])
+  const area = useMemo(
+    () =>
+      baskets
+        ? makeArea(postalCode, baskets.baskets.fixed.lines.find((l) => l.name === 'Housing')?.monthly ?? null, baskets.income)
+        : null,
+    [postalCode, baskets],
+  )
+  const benchmark = useMemo(() => (allTxs && baskets ? makeBenchmark(allTxs, baskets.months, age) : null), [allTxs, baskets, age])
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   // What the assistant knows: the figures on screen. Null until the full history has loaded (or failed to).
   const chatContext = useMemo(
     () =>
       allTxs || wellnessError
-        ? buildContext({ balance: txs?.[0]?.balance_after_eur ?? null, wellness, score: wellness ? visibleWellnessScore(wellness, answers) : { value: null, provisional: false }, allTxs, goal, plan, mortgage, baskets })
+        ? buildContext({ balance: txs?.[0]?.balance_after_eur ?? null, wellness, score: wellness ? visibleWellnessScore(wellness, answers) : { value: null, provisional: false }, allTxs, goal, plan, mortgage, baskets, benchmark, area })
         : null,
-    [txs, wellness, answers, wellnessError, allTxs, goal, plan, mortgage, baskets],
+    [txs, wellness, answers, wellnessError, allTxs, goal, plan, mortgage, baskets, benchmark, area],
   )
   // What the assistant can look things up in: every transaction, described as the app shows it.
   const chatLedger = useMemo(() => (allTxs ? ledgerOf(allTxs) : null), [allTxs])
@@ -259,6 +315,13 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
     getMortgage(customerId)
       .then((m) => !stale && setMortgage(m))
       .catch(() => {})
+    getCustomer(customerId)
+      .then((c) => {
+        if (stale) return
+        setAge(c?.customer_age ?? null)
+        setPostalCode(c?.customer_postal_code ?? null)
+      })
+      .catch(() => {}) // without an age, the benchmark uses all of Finland; without a postal code, no area card
     return () => {
       stale = true
     }
@@ -301,10 +364,11 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   ]
 
   return (
-    <div className="mx-auto min-h-dvh max-w-2xl px-4 pb-12">
+    <div className="mx-auto min-h-dvh max-w-2xl px-4 pb-28">
       <header className="flex items-center justify-between py-5">
         <span className="text-lg font-semibold tracking-tight">Pankki</span>
-        <div className="flex items-center gap-4 text-sm">
+        <div className="flex items-center gap-3 text-sm sm:gap-4">
+          <ProtectedBadge />
           <span className="text-muted">{customerId}</span>
           <button onClick={onLogout} className="underline underline-offset-4">
             Log out
@@ -331,7 +395,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
       {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
 
       {txs === null ? (
-        !error && <p className="text-sm text-muted">Loading…</p>
+        !error && <SecureLoading />
       ) : view === 'overview' ? (
         <Overview
           year={year}
@@ -343,16 +407,9 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           plan={plan}
           tips={tips}
           baskets={baskets}
+          benchmark={benchmark}
+          area={area}
           savingRange={savingRange}
-          chat={
-            <Chat
-              messages={chatMessages}
-              onMessages={setChatMessages}
-              context={chatContext}
-              ledger={chatLedger}
-              starters={['How am I doing?', 'Where could I cut back?', 'What did I spend in the last two weeks?', goal ? 'Am I on track for my goal?' : 'What should I focus on first?']}
-            />
-          }
           tagOf={tagOf}
           txs={txs}
           wellness={wellness}
@@ -421,7 +478,61 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           />
         )
       )}
+
+      <WalterBar
+        chat={(question, onAsked) => (
+          <Chat
+            question={question}
+            onAsked={onAsked}
+            messages={chatMessages}
+            onMessages={setChatMessages}
+            context={chatContext}
+            ledger={chatLedger}
+            starters={['How am I doing?', 'Where could I cut back?', 'What did I spend in the last two weeks?', goal ? 'Am I on track for my goal?' : 'What should I focus on first?']}
+          />
+        )}
+      />
     </div>
+  )
+}
+
+// Walter, on every page: a bar fixed to the bottom of the screen to type a
+// question in, which opens the chat and asks it.
+function WalterBar({ chat }: { chat: (question: string | null, onAsked: () => void) => ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [question, setQuestion] = useState<string | null>(null)
+  return (
+    <>
+      <div className="fixed inset-x-0 bottom-4 z-10 px-4">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (draft.trim()) setQuestion(draft.trim())
+            setDraft('')
+            setOpen(true)
+          }}
+          className="mx-auto flex max-w-2xl items-center gap-3 rounded-full border border-line bg-white p-2 shadow-lg"
+        >
+          <WalterAvatar className="h-10 w-10 shrink-0" />
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            maxLength={2000}
+            aria-label="Ask Walter"
+            placeholder="Talk with Walter, your personal agent…"
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
+          />
+          <button
+            aria-label="Send to Walter"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-ink text-white hover:bg-ink/90"
+          >
+            <span aria-hidden="true">→</span>
+          </button>
+        </form>
+      </div>
+      {open && <ChatDialog onClose={() => setOpen(false)}>{chat(question, () => setQuestion(null))}</ChatDialog>}
+    </>
   )
 }
 
@@ -452,8 +563,9 @@ function Overview({
   plan,
   tips,
   baskets,
+  benchmark,
+  area,
   savingRange,
-  chat,
   tagOf,
   txs,
   wellness,
@@ -472,8 +584,9 @@ function Overview({
   plan: Plan | null
   tips: Suggestion[]
   baskets: Baskets | null
+  benchmark: Benchmark | null
+  area: AreaView | null
   savingRange: (draft: GoalProfile) => Promise<{ usual: number; max: number } | null>
-  chat: ReactNode
   tagOf: (tx: Transaction) => Tag
   txs: Transaction[]
   wellness: Wellness | null
@@ -487,7 +600,6 @@ function Overview({
   onShowAll: () => void
 }) {
   const [goalFormOpen, setGoalFormOpen] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)
   const latest = txs[0]
   if (!latest) return <p className="text-sm text-muted">No account activity.</p>
   const displayScore = wellness ? visibleWellnessScore(wellness, answers) : { value: null, provisional: false }
@@ -499,8 +611,11 @@ function Overview({
         <div className="p-5">
           <p className="text-sm text-muted">Current account · {latest.bank_account_id}</p>
           <p className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-            {eur(latest.balance_after_eur)}
+            <CipherText id="balance" text={eur(latest.balance_after_eur)} />
           </p>
+          <div className="mt-3">
+            <SecureNote>Read-only view. Nothing in this app can move your money.</SecureNote>
+          </div>
         </div>
       </Card>
 
@@ -525,52 +640,34 @@ function Overview({
         </div>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
-          <div className="flex h-full min-h-40 flex-col p-5">
-            <h2 className="border-b border-line pb-3 font-medium">Financial score</h2>
-            <div className="my-4 flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-3xl font-semibold leading-none text-emerald-900">
-                  {score === null ? '—' : `${score} / 100`}
-                </p>
-                <p className="mt-2 text-sm text-muted">
-                  {displayScore.provisional ? 'Preliminary · account activity only.' : score !== null ? scoreDescription(score) : wellnessError ? 'Score unavailable' : wellnessLoading ? 'Calculating…' : 'Not enough account activity to calculate a score.'}
-                </p>
-              </div>
-              <WellnessApple stage={score === null ? null : Math.min(4, Math.floor(score / 20))} className="size-16 shrink-0" />
+      <Card>
+        <div className="flex h-full min-h-40 flex-col p-5">
+          <h2 className="border-b border-line pb-3 font-medium">Financial score</h2>
+          <div className="my-4 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-3xl font-semibold leading-none text-emerald-900">
+                {score === null ? '—' : `${score} / 100`}
+              </p>
+              <p className="mt-2 text-sm text-muted">
+                {displayScore.provisional ? 'Preliminary · account activity only.' : score !== null ? scoreDescription(score) : wellnessError ? 'Score unavailable' : wellnessLoading ? 'Calculating…' : 'Not enough account activity to calculate a score.'}
+              </p>
             </div>
-            <button
-              onClick={onShowWellness}
-              className="mt-auto flex w-full items-center justify-center gap-1.5 rounded-md border border-line px-3 py-2.5 text-sm font-medium hover:bg-paper"
-            >
-              See details <span aria-hidden="true">→</span>
-            </button>
+            <WellnessApple stage={score === null ? null : Math.min(4, Math.floor(score / 20))} className="size-16 shrink-0" />
           </div>
-        </Card>
-        <Card>
-          <div className="flex h-full min-h-40 flex-col p-5">
-            <div className="flex items-center gap-3 border-b border-line pb-3">
-              <WalterAvatar />
-              <div>
-                <h2 className="text-sm font-medium">Walter</h2>
-                <p className="text-xs text-muted">Your Pankki assistant</p>
-              </div>
-            </div>
-            <div className="my-4 rounded-lg bg-paper p-3 text-sm">
-              Hi, I'm Walter. Ask me how your finances are doing, or what to do next.
-            </div>
-            <button
-              onClick={() => setChatOpen(true)}
-              className="mt-auto flex w-full items-center justify-center gap-2 rounded-md bg-ink px-3 py-2.5 text-sm font-medium text-white hover:bg-ink/90"
-            >
-              Talk with our AI assistant
-            </button>
-          </div>
-        </Card>
-      </div>
+          <button
+            onClick={onShowWellness}
+            className="mt-auto flex w-full items-center justify-center gap-1.5 rounded-md border border-line px-3 py-2.5 text-sm font-medium hover:bg-paper"
+          >
+            See details <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      </Card>
 
       {baskets && <BasketsCard data={baskets} />}
+
+      {benchmark && <BenchmarkCard data={benchmark} />}
+
+      {area && <AreaCard data={area} />}
 
       {goal && planStep !== null ? (
         <Card>
@@ -625,7 +722,6 @@ function Overview({
         </ul>
       </Card>
 
-      {chatOpen && <ChatDialog onClose={() => setChatOpen(false)}>{chat}</ChatDialog>}
 
       {goalFormOpen && (
         <GoalForm

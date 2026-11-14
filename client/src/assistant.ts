@@ -6,7 +6,10 @@ import type { Lookup, Row } from '../ledger'
 import type { Mortgage, Transaction } from './api'
 import { basketOf, INCOME_TYPES, leaks, TRIM, type Baskets } from './baskets'
 import { BASKET_NAMES } from './BasketsCard'
+import { AREA_SOURCE, type AreaView } from './area'
+import { BENCHMARK_SOURCE, gapWords, type Benchmark } from './benchmarks'
 import { goalStatement, type GoalProfile } from './goal'
+import { habitLines, makeHabits } from './habits'
 import { kindOf, suggestions } from './mcc'
 import { mortgageFacts, mortgageLines } from './mortgage'
 import type { Plan } from './plan'
@@ -33,6 +36,8 @@ export function buildContext(d: {
   plan: Plan | null
   mortgage: Mortgage | null
   baskets: Baskets | null
+  benchmark?: Benchmark | null
+  area?: AreaView | null
 }): string {
   // The data may stop well before the calendar date; what counts as "now" for
   // the customer's figures is their latest transaction, as on the plan.
@@ -99,6 +104,32 @@ export function buildContext(d: {
     )
   }
 
+  const bm = d.benchmark
+  if (bm?.lines.length) {
+    const who = bm.group === 'all' ? 'people in Finland (age unknown)' : `Finns aged ${bm.group}, the customer's age group`
+    out.push(
+      '',
+      `Compared with ${who}, per person (shown to the customer as "How you compare"; source: ${BENCHMARK_SOURCE}; rent and bills not compared). The customer's monthly average over ${bm.months} full month(s), then the typical figure:`,
+      ...bm.lines.map((l) => `- ${l.category}: you ${eur(l.you)}, typical ${eur(l.typical)} (${gapWords(l.ratio)})`),
+      `- These categories together: you ${eur(bm.you)}, typical ${eur(bm.typical)} (${gapWords(bm.you / bm.typical)})`,
+    )
+  }
+
+  const a = d.area
+  if (a) {
+    out.push(
+      '',
+      `Where the customer lives (shown as "Your area"; source: ${AREA_SOURCE}): ${a.name}, ${a.city}, in the rent area "${a.zoneLabel}".`,
+      `- Free-market rent there: ${a.rentPerM2.toFixed(2)} €/m² on average; one-room flats ${a.rentOne.toFixed(2)} €/m², two-room flats ${a.rentTwo.toFixed(2)} €/m²`,
+      `- Residents have ${a.m2PerPerson} m² of home per person, so renting for one person there typically costs about ${eur(a.typicalRent)} a month`,
+      a.housing
+        ? `- The customer's housing payment: ${eur(a.housing)} a month (${gapWords(a.housing / a.typicalRent)} compared with that typical rent); it would rent about ${Math.round(a.m2ForPayment!)} m² there. It may be rent or a home loan payment.`
+        : '- No housing payment in the account.',
+      ...(a.housingShare !== null ? [`- Housing takes ${pct(a.housingShare)} of the customer's income`] : []),
+      `- Neighbours: ${pct(a.renters)} of households rent, ${pct(a.livingAlone)} live alone, ${a.householdSize} people per household; median income after tax ${eur(a.medianIncomeMonthly)} a month${a.income ? ` (the customer's: ${eur(a.income)})` : ''}`,
+    )
+  }
+
   out.push('', d.goal ? `Goal for ${d.goal.year}: ${goalStatement(d.goal)}` : 'The customer has not set a goal yet (they can, on the overview page).')
   const p = d.plan
   if (p) {
@@ -139,6 +170,9 @@ export function buildContext(d: {
         out.push(`- ${category} (${eur(total(kinds))}): ${parts.join(', ')}`)
       }
     }
+
+    const habits = makeHabits(d.allTxs)
+    if (habits) out.push('', ...habitLines(habits))
 
     // Every switch a published Finnish price comparison supports, including the
     // ones the app's own card keeps for customers whose goal is out of reach.

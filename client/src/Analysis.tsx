@@ -98,7 +98,7 @@ export function AnalysisSteps({ title, steps, step }: { title: string; steps: re
         ))}
       </ol>
       <p className="flex items-center gap-1.5 text-xs text-muted">
-        <Lock /> Your data stays within Pankki while it is analysed.
+        <Lock /> Only your figures are analysed. Your customer ID and account number are never sent.
       </p>
       <p className="sr-only" role="status" aria-live="polite">{current}</p>
     </div>

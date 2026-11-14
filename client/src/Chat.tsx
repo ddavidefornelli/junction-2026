@@ -3,6 +3,7 @@ import type { Row } from '../ledger'
 import { parseReply, sendChat, suggestionsOf, type Chart, type ChatMessage } from './assistant'
 import { ChatChart } from './ChatChart'
 import { ChatLookup } from './ChatLookup'
+import { SecureNote } from './Security'
 
 const BUBBLE = 'w-fit max-w-[90%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm'
 
@@ -11,6 +12,18 @@ const followUp = (type: Chart['type'], label: string) =>
   type === 'line'
     ? `What happened in ${label.replace(/^(\d{4})-(\d{2})$/, (_, y, m) => `${Number(m)}/${y}`)}?`
     : `Tell me more about ${label}.`
+
+// Text with its web addresses (the sources under advice) as links.
+const withLinks = (text: string) =>
+  text.split(/(https:\/\/[^\s)]+)/).map((piece, k) =>
+    k % 2 ? (
+      <a key={k} href={piece} target="_blank" rel="noreferrer" className="break-all underline underline-offset-2">
+        {piece.replace(/^https:\/\/(www\.)?/, '').replace(/\/$/, '')}
+      </a>
+    ) : (
+      piece
+    ),
+  )
 
 // The conversation with the assistant. The messages live in the parent so they
 // survive a change of tab; `context` is the summary the assistant answers from
@@ -22,12 +35,17 @@ export function Chat({
   context,
   ledger,
   starters,
+  question = null,
+  onAsked,
 }: {
   messages: ChatMessage[]
   onMessages: (messages: ChatMessage[]) => void
   context: string | null
   ledger: Row[] | null
   starters: string[]
+  // A question typed elsewhere, asked once the data is ready; onAsked clears it.
+  question?: string | null
+  onAsked?: () => void
 }) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -37,6 +55,13 @@ export function Chat({
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight })
   }, [messages, busy])
+
+  useEffect(() => {
+    if (question === null || context === null || busy) return
+    onAsked?.()
+    ask(question)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question, context, busy])
 
   async function ask(text: string) {
     const question = text.trim()
@@ -86,7 +111,7 @@ export function Chat({
               parseReply(m.content).map((part, j) =>
                 typeof part === 'string' ? (
                   <p key={`${i}-${j}`} className={`bg-paper ${BUBBLE}`}>
-                    {part}
+                    {withLinks(part)}
                   </p>
                 ) : 'rows' in part ? (
                   <ChatLookup key={`${i}-${j}`} lookup={part} />
@@ -161,6 +186,9 @@ export function Chat({
           Send
         </button>
       </form>
+      <div className="mt-2.5">
+        <SecureNote>Walter sees your figures, never your customer ID or account number. This chat is not saved.</SecureNote>
+      </div>
     </div>
   )
 }
