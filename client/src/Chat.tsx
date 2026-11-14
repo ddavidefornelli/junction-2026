@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import type { Row } from '../ledger'
 import { parseReply, sendChat, suggestionsOf, type Chart, type ChatMessage } from './assistant'
 import { ChatChart } from './ChatChart'
@@ -37,6 +37,8 @@ export function Chat({
   starters,
   question = null,
   onAsked,
+  prompt = null,
+  onPromptHandled,
 }: {
   messages: ChatMessage[]
   onMessages: (messages: ChatMessage[]) => void
@@ -46,24 +48,21 @@ export function Chat({
   // A question typed elsewhere, asked once the data is ready; onAsked clears it.
   question?: string | null
   onAsked?: () => void
+  prompt?: { id: number; text: string } | null
+  onPromptHandled?: () => void
 }) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
   const log = useRef<HTMLDivElement>(null)
+  const handledPrompt = useRef<number | null>(null)
+  const handledQuestion = useRef<string | null>(null)
 
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight })
   }, [messages, busy])
 
-  useEffect(() => {
-    if (question === null || context === null || busy) return
-    onAsked?.()
-    ask(question)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [question, context, busy])
-
-  async function ask(text: string) {
+  const ask = useCallback(async (text: string) => {
     const question = text.trim()
     if (!question || busy || context === null) return
     // After a failed reply the question is still the last message: ask it again rather than twice.
@@ -83,7 +82,27 @@ export function Chat({
     } finally {
       setBusy(false)
     }
-  }
+  }, [busy, context, ledger, messages, onMessages])
+
+  useEffect(() => {
+    if (question === null) {
+      handledQuestion.current = null
+      return
+    }
+    if (context === null || busy || handledQuestion.current === question) return
+    handledQuestion.current = question
+    onAsked?.()
+    void ask(question)
+  }, [question, context, busy, ask, onAsked])
+
+  // Wait for the customer's data, then send the scenario through Walter's normal chat API.
+  // The id guard also prevents StrictMode from sending the same question twice.
+  useEffect(() => {
+    if (!prompt || context === null || handledPrompt.current === prompt.id) return
+    handledPrompt.current = prompt.id
+    onPromptHandled?.()
+    void ask(prompt.text)
+  }, [prompt, context, ask, onPromptHandled])
 
   function submit(e: FormEvent) {
     e.preventDefault()

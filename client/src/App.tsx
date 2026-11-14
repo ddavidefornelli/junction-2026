@@ -26,11 +26,13 @@ import { makeBenchmark, type Benchmark } from './benchmarks'
 import { Chat } from './Chat'
 import { WalterAvatar } from './WalterAvatar'
 import { ChatDialog } from './ChatDialog'
+import { WhatIfDialog } from './WhatIfDialog'
 import { WellnessApple } from './WellnessApple'
 import { buildContext, ledgerOf, type ChatMessage } from './assistant'
 import { AnalysisSteps, useStagedProgress } from './Analysis'
 import { CipherText, ProtectedBadge, SecureLoading, SecureNote, ShieldSeal, clearSession, linkEncrypted, markSessionStart } from './Security'
 import { APPROVED_COLLATERAL_COVER, APPROVED_EQUITY_SHARE, getMortgageSteps, mortgageFacts, type MortgageFacts, type MortgageStep } from './mortgage'
+import { financialProfileTagline } from './profile'
 
 const PLAN_STEPS = [
   'Grouping your spending into categories',
@@ -259,6 +261,15 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   )
   const benchmark = useMemo(() => (allTxs && baskets ? makeBenchmark(allTxs, baskets.months, age) : null), [allTxs, baskets, age])
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatOpen, setChatOpen] = useState(false)
+  const [scenariosOpen, setScenariosOpen] = useState(false)
+  const [chatPrompt, setChatPrompt] = useState<{ id: number; text: string } | null>(null)
+  const nextChatPrompt = useRef(0)
+  const askScenario = (question: string) => {
+    setScenariosOpen(false)
+    setChatPrompt({ id: ++nextChatPrompt.current, text: question })
+    setChatOpen(true)
+  }
   // What the assistant knows: the figures on screen. Null until the full history has loaded (or failed to).
   const chatContext = useMemo(
     () =>
@@ -410,6 +421,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           benchmark={benchmark}
           area={area}
           savingRange={savingRange}
+          onOpenChat={() => setChatOpen(true)}
           tagOf={tagOf}
           txs={txs}
           wellness={wellness}
@@ -433,6 +445,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           error={wellnessError}
           onBack={() => setView('overview')}
           onShowWellness={() => setView('wellness')}
+          onWhatIf={() => setScenariosOpen(true)}
         />
       ) : view === 'transactions' ? (
         <Transactions
@@ -478,7 +491,6 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           />
         )
       )}
-
       <WalterBar
         chat={(question, onAsked) => (
           <Chat
@@ -492,6 +504,29 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           />
         )}
       />
+      {scenariosOpen && (
+        <WhatIfDialog
+          context={chatContext}
+          onPick={askScenario}
+          onClose={() => setScenariosOpen(false)}
+        />
+      )}
+      {chatOpen && (
+        <ChatDialog onClose={() => {
+          setChatOpen(false)
+          setChatPrompt(null)
+        }}>
+          <Chat
+            messages={chatMessages}
+            onMessages={setChatMessages}
+            context={chatContext}
+            ledger={chatLedger}
+            starters={['How am I doing?', 'Where could I cut back?', 'What did I spend in the last two weeks?', goal ? 'Am I on track for my goal?' : 'What should I focus on first?']}
+            prompt={chatPrompt}
+            onPromptHandled={() => setChatPrompt(null)}
+          />
+        </ChatDialog>
+      )}
     </div>
   )
 }
@@ -566,6 +601,7 @@ function Overview({
   benchmark,
   area,
   savingRange,
+  onOpenChat,
   tagOf,
   txs,
   wellness,
@@ -587,6 +623,7 @@ function Overview({
   benchmark: Benchmark | null
   area: AreaView | null
   savingRange: (draft: GoalProfile) => Promise<{ usual: number; max: number } | null>
+  onOpenChat: () => void
   tagOf: (tx: Transaction) => Tag
   txs: Transaction[]
   wellness: Wellness | null
@@ -640,28 +677,56 @@ function Overview({
         </div>
       </Card>
 
-      <Card>
-        <div className="flex h-full min-h-40 flex-col p-5">
-          <h2 className="border-b border-line pb-3 font-medium">Financial score</h2>
-          <div className="my-4 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-3xl font-semibold leading-none text-emerald-900">
-                {score === null ? '—' : `${score} / 100`}
-              </p>
-              <p className="mt-2 text-sm text-muted">
-                {displayScore.provisional ? 'Preliminary · account activity only.' : score !== null ? scoreDescription(score) : wellnessError ? 'Score unavailable' : wellnessLoading ? 'Calculating…' : 'Not enough account activity to calculate a score.'}
-              </p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card>
+          <div className="flex h-full min-h-40 flex-col p-5">
+            <h2 className="border-b border-line pb-3 font-medium">Your financial profile</h2>
+            <div className="my-4 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-3xl font-semibold leading-none text-emerald-900">
+                  {score === null ? '—' : `${score} / 100`}
+                </p>
+                {displayScore.provisional && <p className="mt-1 text-xs text-muted">Preliminary · account activity only</p>}
+                <p className="mt-2 text-sm text-muted">
+                  {displayScore.provisional
+                    ? 'Preliminary · account activity only.'
+                    : score !== null
+                      ? `${financialProfileTagline(score)} ${scoreDescription(score)}`
+                      : wellnessError
+                        ? 'Profile unavailable'
+                        : wellnessLoading
+                          ? 'Calculating…'
+                          : 'Not enough account activity yet.'}
+                </p>
+              </div>
+              <WellnessApple stage={score === null ? null : Math.min(4, Math.floor(score / 20))} className="size-16 shrink-0" />
             </div>
-            <WellnessApple stage={score === null ? null : Math.min(4, Math.floor(score / 20))} className="size-16 shrink-0" />
+            <button onClick={onShowWellness} className="mt-auto flex w-full items-center justify-center gap-1.5 rounded-md border border-line px-3 py-2.5 text-sm font-medium hover:bg-paper">
+              See details <span aria-hidden="true">→</span>
+            </button>
           </div>
-          <button
-            onClick={onShowWellness}
-            className="mt-auto flex w-full items-center justify-center gap-1.5 rounded-md border border-line px-3 py-2.5 text-sm font-medium hover:bg-paper"
-          >
-            See details <span aria-hidden="true">→</span>
-          </button>
-        </div>
-      </Card>
+        </Card>
+        <Card>
+          <div className="flex h-full min-h-40 flex-col p-5">
+            <div className="flex items-center gap-3 border-b border-line pb-3">
+              <WalterAvatar />
+              <div>
+                <h2 className="text-sm font-medium">Walter</h2>
+                <p className="text-xs text-muted">Your Pankki assistant</p>
+              </div>
+            </div>
+            <div className="my-4 rounded-lg bg-paper p-3 text-sm">
+              Hi, I'm Walter. Ask me how your finances are doing, or what to do next.
+            </div>
+            <button
+              onClick={onOpenChat}
+              className="mt-auto flex w-full items-center justify-center gap-2 rounded-md bg-ink px-3 py-2.5 text-sm font-medium text-white hover:bg-ink/90"
+            >
+              Talk with our AI assistant
+            </button>
+          </div>
+        </Card>
+      </div>
 
       {baskets && <BasketsCard data={baskets} />}
 
@@ -721,7 +786,6 @@ function Overview({
           ))}
         </ul>
       </Card>
-
 
       {goalFormOpen && (
         <GoalForm
@@ -851,13 +915,14 @@ function TipsCard({ tips }: { tips: Suggestion[] }) {
   )
 }
 
-function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWellness }: {
+function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWellness, onWhatIf }: {
   wellness: Wellness | null
   answers: WellnessAnswers
   loading: boolean
   error: boolean
   onBack: () => void
   onShowWellness: () => void
+  onWhatIf: () => void
 }) {
   const [openDetails, setOpenDetails] = useState<string | null>(null)
   const [activeTip, setActiveTip] = useState(0)
@@ -921,10 +986,10 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
     <div className="space-y-6 rounded-3xl bg-[#f3faf3] p-4 pb-8 text-emerald-950 sm:p-6">
       <button onClick={onBack} className="text-sm font-medium text-emerald-800 underline-offset-4 hover:underline">← Back to overview</button>
       <header>
-        <h1 className="text-3xl font-bold tracking-tight">Financial score</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Your financial profile</h1>
         <p className="mt-1 text-sm text-emerald-800">Your financial well-being at a glance.</p>
       </header>
-      <section aria-label="Your financial score" className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-7">
+      <section aria-label="Your financial profile score" className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-7">
         <div className="grid items-center gap-4 sm:grid-cols-[1fr_200px]">
           <div>
             <p className="text-sm font-semibold text-emerald-700">Your score {displayScore.provisional && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-1 text-xs">Preliminary</span>}</p>
@@ -956,7 +1021,7 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
       <section aria-labelledby="household-comparison-title" className="rounded-3xl border border-emerald-100 bg-white p-5 sm:p-6">
         <h2 id="household-comparison-title" className="text-xl font-bold">Customers like you… can plan for surprises</h2>
         <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl bg-emerald-50 p-4 sm:gap-5">
-          <strong className="text-3xl font-bold text-emerald-900">Almost 1 in 10</strong>
+          <strong className="text-3xl font-bold text-emerald-900">1 in 10</strong>
           <p className="text-sm text-emerald-900">Finnish households said they struggled to make ends meet in 2023.</p>
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-700">
@@ -980,7 +1045,9 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
             </li>
           ))}
         </ol>
-        {displayScore.provisional && <p className="mt-3 text-xs text-emerald-800">Apple stage is a preview; the full score may change it.</p>}
+        <button type="button" onClick={onWhatIf} className="mt-4 rounded-full bg-emerald-800 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
+          What if scenarios
+        </button>
         {openDetails === 'levels' && (
           <p id="score-levels" className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm leading-relaxed text-emerald-900">
             The apple gradually becomes healthier as the score rises. Ranges are illustrative, not official bank classifications. {displayScore.provisional ? 'The highlighted stage is only a preview based on account activity; your full score may differ.' : score === null ? 'Your stage will appear once there is enough account activity.' : `Your full score places you in the ${levels[stage!].name.toLowerCase()} stage.`}
@@ -1092,7 +1159,7 @@ function FinancialWellness({ data: w, answers, onAnswers }: {
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="min-h-40 rounded-lg border border-line bg-white p-5">
             <p className="flex items-center gap-2 text-sm text-muted">
-              Financial score {infoButton('impact', 'the financial score')}
+              Your financial profile {infoButton('impact', 'the financial score')}
             </p>
             <p className="mt-4 text-5xl font-semibold tracking-tight">
               {displayScore.value ?? '—'} <span className="text-lg font-normal text-muted">/ 100</span>
