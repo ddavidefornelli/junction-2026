@@ -7,19 +7,16 @@ import {
   getTransactions,
   getWellnessTransactions,
   classify,
-  verdictKey,
+  spendingKey,
   type Mortgage,
+  type SpendingClass,
   type Transaction,
-  type Verdict,
 } from './api'
 import { date, eur, label, percent, signedEur } from './format'
 import { calculateWellness, emptyAnswers, visibleWellnessScore, wellnessScores, type Wellness, type WellnessAnswers } from './wellness'
-import { GoalForm } from './GoalForm'
-import { deadline, goalLabel, goalStatement, loadGoalProfile, monthYear, saveGoalProfile, type GoalProfile } from './goal'
-import { makePlan, txId, type Plan } from './plan'
 import { kindOf, suggestions, type Suggestion } from './mcc'
 import { makeBaskets, type Baskets } from './baskets'
-import { BASKET_NAMES, BasketsCard } from './BasketsCard'
+import { BasketsCard } from './BasketsCard'
 import { BenchmarkCard } from './BenchmarkCard'
 import { AreaCard } from './AreaCard'
 import { makeArea, type AreaView } from './area'
@@ -34,13 +31,6 @@ import { AnalysisSteps, useStagedProgress } from './Analysis'
 import { CipherText, ProtectedBadge, SecureLoading, SecureNote, ShieldSeal, clearSession, linkEncrypted, markSessionStart } from './Security'
 import { APPROVED_COLLATERAL_COVER, APPROVED_EQUITY_SHARE, getMortgageSteps, mortgageFacts, type MortgageFacts, type MortgageStep } from './mortgage'
 import { financialProfileTagline } from './profile'
-
-const PLAN_STEPS = [
-  'Grouping your spending into categories',
-  'Asking Laya which purchases help your goal',
-  'Setting a monthly budget for each category',
-  'Checking the plan is within reach',
-] as const
 
 const SESSION_KEY = 'customerId'
 
@@ -261,67 +251,35 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   const [wellnessError, setWellnessError] = useState(false)
   const [wellnessAttempt, setWellnessAttempt] = useState(0)
   const [error, setError] = useState('')
-  const year = new Date().getFullYear()
-  const [goal, setGoal] = useState(() => {
-    const saved = loadGoalProfile(customerId)
-    return saved?.year === year ? saved : null
-  })
-  // Every transaction, oldest first: what budgets and verdicts are worked out from.
+  // Every transaction, oldest first: Laya classifies purchase kinds from this history.
   const [allTxs, setAllTxs] = useState<Transaction[] | null>(null)
-  // Verdicts per purchase kind, for the goal they were classified against.
-  const [verdicts, setVerdicts] = useState<{ goal: string; map: Record<string, Verdict> } | null>(null)
-  const [classifyError, setClassifyError] = useState<{ goal: string; message: string } | null>(null)
-  const goalText = goal ? goalLabel(goal) : null
-  const currentVerdicts = verdicts && verdicts.goal === goalText ? verdicts.map : null
-
-  // Laya's answers per goal wording, asked once each (the goal form asks about drafts too).
-  const classified = useRef(new Map<string, Promise<Record<string, Verdict>>>())
-  const classifyFor = useCallback((text: string, rows: Transaction[]) => {
-    let answer = classified.current.get(text)
-    if (!answer) {
-      answer = classify(text, rows)
-      classified.current.set(text, answer)
-      answer.catch(() => classified.current.delete(text)) // let a failed round be retried
+  const [spendingClasses, setSpendingClasses] = useState<Record<string, SpendingClass> | null>(null)
+  const [classifyError, setClassifyError] = useState<string | null>(null)
+  const [classifyAttempt, setClassifyAttempt] = useState(0)
+  const classified = useRef<Promise<Record<string, SpendingClass>> | null>(null)
+  const classifyOnce = useCallback((rows: Transaction[]) => {
+    if (!classified.current) {
+      const request = classify(rows)
+      classified.current = request
+      request.catch(() => {
+        if (classified.current === request) classified.current = null
+      })
     }
-    return answer
+    return classified.current
   }, [])
 
-  // One round of Laya questions per goal: which kinds of purchase help it, and which are optional.
+  // Laya labels spending on its own; no personal goal is needed.
   useEffect(() => {
-    if (!goalText || !allTxs || currentVerdicts || classifyError?.goal === goalText) return
+    if (!allTxs || spendingClasses || classifyError) return
     let stale = false
-    classifyFor(goalText, allTxs)
-      .then((map) => !stale && setVerdicts({ goal: goalText, map }))
-      .catch((e) => !stale && setClassifyError({ goal: goalText, message: e instanceof Error ? e.message : 'Unknown error' }))
+    classifyOnce(allTxs)
+      .then((classes) => !stale && setSpendingClasses(classes))
+      .catch((e) => !stale && setClassifyError(e instanceof Error ? e.message : 'Unknown error'))
     return () => {
       stale = true
     }
-  }, [goalText, allTxs, currentVerdicts, classifyFor, classifyError])
-
-  // For the goal form: what a draft goal would allow, before it is saved.
-  const savingRange = useCallback(
-    async (draft: GoalProfile) => {
-      if (!allTxs) return null
-      const draftPlan = makePlan(draft, allTxs, await classifyFor(goalLabel(draft), allTxs))
-      return draftPlan && { usual: draftPlan.usualSaving, max: draftPlan.maxSaving }
-    },
-    [allTxs, classifyFor],
-  )
-
-  const plan = useMemo(
-    () => (goal && allTxs && currentVerdicts ? makePlan(goal, allTxs, currentVerdicts) : null),
-    [goal, allTxs, currentVerdicts],
-  )
-  // The plan is revealed only after a short, visible analysis; a retry runs it again.
-  const [planAttempt, setPlanAttempt] = useState(0)
-  const planError = classifyError?.goal === goalText ? classifyError.message : null
-  const planAnalysis = useStagedProgress(
-    PLAN_STEPS.length,
-    Boolean(allTxs && currentVerdicts) || planError !== null || wellnessError,
-    `${goalText}|${planAttempt}`,
-  )
-  const planStep = goal && !planAnalysis.done ? planAnalysis.step : null
-  const tips = useMemo(() => (allTxs ? suggestions(allTxs, plan ? !plan.reachable : false) : []), [allTxs, plan])
+  }, [allTxs, spendingClasses, classifyError, classifyAttempt, classifyOnce])
+  const tips = useMemo(() => (allTxs ? suggestions(allTxs) : []), [allTxs])
   const baskets = useMemo(() => (allTxs ? makeBaskets(allTxs) : null), [allTxs])
   const area = useMemo(
     () =>
@@ -345,9 +303,9 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   const chatContext = useMemo(
     () =>
       allTxs || wellnessError
-        ? buildContext({ balance: txs?.[0]?.balance_after_eur ?? null, wellness, score: wellness ? visibleWellnessScore(wellness, answers) : { value: null, provisional: false }, allTxs, goal, plan, mortgage, baskets, benchmark, area })
+        ? buildContext({ balance: txs?.[0]?.balance_after_eur ?? null, wellness, score: wellness ? visibleWellnessScore(wellness, answers) : { value: null, provisional: false }, allTxs, spendingClasses, mortgage, baskets, benchmark, area })
         : null,
-    [txs, wellness, answers, wellnessError, allTxs, goal, plan, mortgage, baskets, benchmark, area],
+    [txs, wellness, answers, wellnessError, allTxs, spendingClasses, mortgage, baskets, benchmark, area],
   )
   // What the assistant can look things up in: every transaction, described as the app shows it.
   const chatLedger = useMemo(() => (allTxs ? ledgerOf(allTxs) : null), [allTxs])
@@ -378,11 +336,11 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   const mortgageInfo = useMemo(() => (mortgage && allTxs ? mortgageFacts(mortgage, allTxs) : null), [mortgage, allTxs])
   const tagOf = useCallback(
     (tx: Transaction): Tag => {
-      if (!currentVerdicts) return undefined
-      if (currentVerdicts[verdictKey(tx) ?? ''] === 'good') return 'helps'
-      return plan?.overBudget.has(txId(tx)) ? 'over' : undefined
+      if (!spendingClasses) return undefined
+      const key = spendingKey(tx)
+      return key ? spendingClasses[key] : undefined
     },
-    [currentVerdicts, plan],
+    [spendingClasses],
   )
 
   useEffect(() => {
@@ -480,29 +438,21 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
         !error && <SecureLoading />
       ) : view === 'overview' ? (
         <Overview
-          year={year}
-          goal={goal}
-          onSaveGoal={(profile) => {
-            saveGoalProfile(customerId, profile)
-            setGoal(profile)
-          }}
-          plan={plan}
           tips={tips}
           baskets={baskets}
           benchmark={benchmark}
           area={area}
-          savingRange={savingRange}
           tagOf={tagOf}
           txs={txs}
           wellness={wellness}
           answers={answers}
           wellnessLoading={wellnessLoading}
           wellnessError={wellnessError}
-          planStep={planStep}
-          planError={planError}
-          onRetryPlan={() => {
+          classificationLoading={!spendingClasses && classifyError === null}
+          classificationError={classifyError}
+          onRetryClassification={() => {
             setClassifyError(null)
-            setPlanAttempt((n) => n + 1)
+            setClassifyAttempt((n) => n + 1)
           }}
           onShowWellness={() => setView('score-details')}
           onShowAll={() => setView('transactions')}
@@ -570,7 +520,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
             onMessages={setChatMessages}
             context={chatContext}
             ledger={chatLedger}
-            starters={['How am I doing?', 'Where could I cut back?', 'What did I spend in the last two weeks?', goal ? 'Am I on track for my goal?' : 'What should I focus on first?']}
+            starters={['How am I doing?', 'Where could I cut back?', 'What did I spend in the last two weeks?', 'What should I focus on first?']}
           />
         )}
       />
@@ -591,7 +541,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
             onMessages={setChatMessages}
             context={chatContext}
             ledger={chatLedger}
-            starters={['How am I doing?', 'Where could I cut back?', 'What did I spend in the last two weeks?', goal ? 'Am I on track for my goal?' : 'What should I focus on first?']}
+            starters={['How am I doing?', 'Where could I cut back?', 'What did I spend in the last two weeks?', 'What should I focus on first?']}
             prompt={chatPrompt}
             onPromptHandled={() => setChatPrompt(null)}
           />
@@ -641,8 +591,8 @@ function WalterBar({ chat }: { chat: (question: string | null, onAsked: () => vo
   )
 }
 
-// What a transaction row says about the goal, if anything.
-type Tag = 'helps' | 'over' | undefined
+// Laya's category-level reading of a transaction.
+type Tag = SpendingClass | undefined
 
 function Card({ children }: { children: ReactNode }) {
   return <section className="rounded-lg border border-line bg-white">{children}</section>
@@ -662,49 +612,38 @@ function scoreDescription(score: number): string {
 }
 
 function Overview({
-  year,
-  goal,
-  onSaveGoal,
-  plan,
   tips,
   baskets,
   benchmark,
   area,
-  savingRange,
   tagOf,
   txs,
   wellness,
   answers,
   wellnessLoading,
   wellnessError,
-  planStep,
-  planError,
-  onRetryPlan,
+  classificationLoading,
+  classificationError,
+  onRetryClassification,
   onShowWellness,
   onShowAll,
 }: {
-  year: number
-  goal: GoalProfile | null
-  onSaveGoal: (profile: GoalProfile) => void
-  plan: Plan | null
   tips: Suggestion[]
   baskets: Baskets | null
   benchmark: Benchmark | null
   area: AreaView | null
-  savingRange: (draft: GoalProfile) => Promise<{ usual: number; max: number } | null>
   tagOf: (tx: Transaction) => Tag
   txs: Transaction[]
   wellness: Wellness | null
   answers: WellnessAnswers
   wellnessLoading: boolean
   wellnessError: boolean
-  planStep: number | null
-  planError: string | null
-  onRetryPlan: () => void
+  classificationLoading: boolean
+  classificationError: string | null
+  onRetryClassification: () => void
   onShowWellness: () => void
   onShowAll: () => void
 }) {
-  const [goalFormOpen, setGoalFormOpen] = useState(false)
   const latest = txs[0]
   if (!latest) return <p className="text-sm text-muted">No account activity.</p>
   const displayScore = wellness ? visibleWellnessScore(wellness, answers) : { value: null, provisional: false }
@@ -721,27 +660,6 @@ function Overview({
           <div className="mt-3">
             <SecureNote>Read-only view. Nothing in this app can move your money.</SecureNote>
           </div>
-        </div>
-      </Card>
-
-      <Card>
-        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-sm text-muted">Your goal for {year}</p>
-            <p className="mt-1 font-medium">
-              {goal ? goalStatement(goal) : 'Set a goal and Walter will build a monthly plan to get you there.'}
-            </p>
-          </div>
-          <button
-            onClick={() => setGoalFormOpen(true)}
-            className={
-              goal
-                ? 'shrink-0 self-start rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-paper sm:self-auto'
-                : 'shrink-0 rounded-md bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-ink/90'
-            }
-          >
-            {goal ? 'Edit goal' : `Set your financial goal for ${year}`}
-          </button>
         </div>
       </Card>
 
@@ -780,43 +698,6 @@ function Overview({
 
       {area && <AreaCard data={area} />}
 
-      {goal && planStep !== null ? (
-        <Card>
-          <div className="p-5">
-            <AnalysisSteps title="Building your plan" steps={PLAN_STEPS} step={planStep} />
-          </div>
-        </Card>
-      ) : (
-        goal && (
-          <div className="animate-fade-up">
-            {plan ? (
-              <PlanCard goal={goal} plan={plan} baskets={baskets} />
-            ) : (
-              <Card>
-                <div className="p-5">
-                  <h2 className="font-medium">Your plan</h2>
-                  {planError ? (
-                    <>
-                      <p role="alert" className="mt-2 text-sm">Walter could not build your plan right now.</p>
-                      <p className="mt-1 text-xs text-muted">{planError}</p>
-                      <button onClick={onRetryPlan} className="mt-3 rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-paper">
-                        Try again
-                      </button>
-                    </>
-                  ) : (
-                    <p className="mt-2 text-sm text-muted">
-                      {wellnessError
-                        ? 'Your transactions could not be loaded, so there is no plan yet.'
-                        : 'A plan needs at least one full month of account history before this one. Check back next month.'}
-                    </p>
-                  )}
-                </div>
-              </Card>
-            )}
-          </div>
-        )
-      )}
-
       {tips.length > 0 && <TipsCard tips={tips} />}
 
       <Card>
@@ -826,6 +707,18 @@ function Overview({
             Show all
           </button>
         </div>
+        <div className="px-5 pb-2">
+          {classificationLoading ? (
+            <p role="status" className="text-xs text-muted">Laya is classifying your spending as essential, flexible, or money set aside…</p>
+          ) : classificationError ? (
+            <p role="alert" className="text-xs text-red-700">
+              Laya could not classify your spending.{' '}
+              <button onClick={onRetryClassification} className="underline underline-offset-2">Try again</button>
+            </p>
+          ) : (
+            <p className="text-xs text-muted">Laya’s labels are estimates based on each transaction category and type.</p>
+          )}
+        </div>
         <ul className="divide-y divide-line px-5">
           {txs.slice(0, 5).map((tx, i) => (
             <TxRow key={i} tx={tx} tag={tagOf(tx)} showDate />
@@ -833,102 +726,7 @@ function Overview({
         </ul>
       </Card>
 
-      {goalFormOpen && (
-        <GoalForm
-          year={year}
-          initial={goal}
-          savingRange={savingRange}
-          onClose={() => setGoalFormOpen(false)}
-          onSave={(profile) => {
-            onSaveGoal(profile)
-            setGoalFormOpen(false)
-          }}
-        />
-      )}
     </div>
-  )
-}
-
-function PlanCard({ goal, plan, baskets }: { goal: GoalProfile; plan: Plan; baskets: Baskets | null }) {
-  const by = deadline(goal)
-  const [year, month] = plan.month.split('-')
-  // Rounded to cents, so float leftovers never show as "0,00 €" instead of "Used up".
-  const safe = Math.round(plan.safeThisWeek * 100) / 100
-  return (
-    <Card>
-      <div className="p-5">
-        <h2 className="font-medium">Your plan</h2>
-        <p className="mt-2 text-sm">
-          {plan.requiredSaving !== null && by
-            ? `To reach ${eur(goal.targetEur)} by ${monthYear(by)}, set aside ${eur(plan.requiredSaving)} a month. You usually set aside ${eur(plan.usualSaving)}.`
-            : goal.goal === 'spend'
-              ? 'These budgets add up to 10% less than you usually spend.'
-              : 'These budgets are what you usually spend. Add an amount and a date to your goal for a plan that gets you there.'}
-        </p>
-        {!plan.reachable && (
-          <p className="mt-2 text-sm text-amber-900">
-            Even with every budget cut as far as is sensible, this pace is out of reach. A later date or a
-            smaller amount would make the plan workable.
-          </p>
-        )}
-        {plan.categories.length > 0 && (
-          <>
-            <div className="mt-4 rounded-md bg-paper p-4">
-              <p className="text-sm text-muted">Safe to spend this week</p>
-              <p className={`mt-1 text-2xl font-semibold tracking-tight ${safe > 0 ? '' : 'text-amber-900'}`}>
-                {safe > 0 ? eur(safe) : 'Used up'}
-              </p>
-              <p className="mt-1 text-sm text-muted">On {BASKET_NAMES.everyday.name.toLowerCase()}: {BASKET_NAMES.everyday.examples.toLowerCase()}.</p>
-              <dl className="mt-3 space-y-1.5 border-t border-line pt-3 text-sm">
-                {baskets && (
-                  <>
-                    <div className="flex justify-between gap-4">
-                      <dt>{BASKET_NAMES.fixed.name} <span className="text-muted">· already counted</span></dt>
-                      <dd className="shrink-0">{eur(baskets.baskets.fixed.monthly)} <span className="text-muted">a month</span></dd>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <dt>{BASKET_NAMES.irregular.name} <span className="text-muted">· put aside</span></dt>
-                      <dd className="shrink-0">{eur(baskets.baskets.irregular.monthly)} <span className="text-muted">a month</span></dd>
-                    </div>
-                  </>
-                )}
-                <div className="flex justify-between gap-4">
-                  <dt>{BASKET_NAMES.everyday.name} <span className="text-muted">· your budgets</span></dt>
-                  <dd className="shrink-0">{eur(plan.budgetTotal)} <span className="text-muted">a month</span></dd>
-                </div>
-              </dl>
-              <p className="mt-2 text-xs text-muted">
-                {safe > 0
-                  ? `A week's share of your budgets below${plan.capped ? `, capped at the ${eur(plan.remaining)} left of them in ${Number(month)}/${year}` : ''}. Rent, bills, food and surprise costs are paid from the rest of your income first.`
-                  : `This month's budgets are used up. Must-pay costs are still covered; the budgets start again next month.`}
-              </p>
-            </div>
-            <p className="mt-4 text-sm text-muted">Monthly budgets · spent in {Number(month)}/{year}</p>
-            <ul className="mt-1">
-              {plan.categories.map((c) => {
-                const over = c.spent > c.budget
-                return (
-                  <li key={c.category} className="border-b border-line py-3 last:border-0 last:pb-0">
-                    <div className="flex justify-between gap-4 text-sm">
-                      <span>{c.category}</span>
-                      <span className={over ? 'font-medium text-amber-900' : ''}>
-                        {eur(c.spent)} <span className="text-muted">of {eur(c.budget)}</span>
-                      </span>
-                    </div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
-                      <div
-                        className={`h-full rounded-full ${over ? 'bg-amber-600' : 'bg-ink'}`}
-                        style={{ width: `${c.budget > 0 ? Math.min(100, (c.spent / c.budget) * 100) : 100}%` }}
-                      />
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          </>
-        )}
-      </div>
-    </Card>
   )
 }
 
@@ -989,8 +787,8 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
     ...(w && w.outgoing > 0 && w.averageBalance < w.outgoing / w.days * 90 ? [{ title: 'Grow your cash buffer', summary: 'Give your budget more breathing room.', detail: 'A cash buffer can help with essential expenses and surprises. Start with a target that works for you.' }] : []),
     ...(displayScore.provisional ? [{ title: 'Complete your picture', summary: 'See more than your account activity.', detail: 'Answer the questionnaire to add perception, knowledge and habits to your score. The full score also needs two complete months of transactions.' }] : []),
     { title: 'Review your spending', summary: 'Spot patterns in where your money goes.', detail: 'Look through recent outgoings and see if any recurring costs could be reduced.' },
-    { title: 'Choose a small goal', summary: 'Make your next milestone feel achievable.', detail: 'Pick a specific target and a realistic monthly amount, then track your progress over time.' },
-    { title: 'Check in regularly', summary: 'Keep your plan in step with your life.', detail: 'Revisit your spending and savings as your circumstances change. These are general ideas, not financial advice.' },
+    { title: 'Review one regular cost', summary: 'Small checks can free up money.', detail: 'Look at one bill or subscription and see whether it still suits your needs.' },
+    { title: 'Check in regularly', summary: 'Keep your money picture current.', detail: 'Revisit your spending and savings as your circumstances change. These are general ideas, not financial advice.' },
   ].slice(0, 5)
   const showTip = (index: number) => {
     const next = Math.max(0, Math.min(tips.length - 1, index))
@@ -1320,11 +1118,16 @@ function TxRow({
       <div className="min-w-0">
         <p className="flex items-center gap-2">
           <span className="truncate">{title}</span>
-          {tag === 'helps' && (
-            <span className="shrink-0 rounded-full bg-credit/10 px-2 py-0.5 text-xs font-medium text-credit">Helps your goal</span>
-          )}
-          {tag === 'over' && (
-            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">Over budget</span>
+          {tag && (
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+              tag === 'essential'
+                ? 'bg-slate-100 text-slate-700'
+                : tag === 'flexible'
+                  ? 'bg-amber-100 text-amber-900'
+                  : 'bg-credit/10 text-credit'
+            }`}>
+              {tag === 'essential' ? 'Essential' : tag === 'flexible' ? 'Flexible' : 'Money set aside'}
+            </span>
           )}
         </p>
         {detail && <p className="truncate text-sm text-muted">{detail}</p>}

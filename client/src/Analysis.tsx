@@ -15,7 +15,7 @@ function stepDuration(ms: number) {
   }
 }
 
-// `key` restarts the walk (a new goal, a retried load). The walk waits at step
+// `key` restarts the walk (a new analysis, a retried load). The walk waits at step
 // `holdAt` (default: the last one) until `ready` is true; steps after it are
 // short. `done` turns true one step after the last one.
 export function useStagedProgress(

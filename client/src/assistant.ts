@@ -3,16 +3,14 @@
 // to /api/chat (see ../chat.ts).
 
 import type { Lookup, Row } from '../ledger'
-import type { Mortgage, Transaction } from './api'
+import { spendingKey, type Mortgage, type SpendingClass, type Transaction } from './api'
 import { basketOf, INCOME_TYPES, leaks, TRIM, type Baskets } from './baskets'
 import { BASKET_NAMES } from './BasketsCard'
 import { AREA_SOURCE, type AreaView } from './area'
 import { BENCHMARK_SOURCE, gapWords, type Benchmark } from './benchmarks'
-import { goalStatement, type GoalProfile } from './goal'
 import { habitLines, makeHabits } from './habits'
 import { kindOf, suggestions } from './mcc'
 import { mortgageFacts, mortgageLines } from './mortgage'
-import type { Plan } from './plan'
 import type { Wellness } from './wellness'
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
@@ -32,15 +30,14 @@ export function buildContext(d: {
   wellness: Wellness | null
   score: { value: number | null; provisional: boolean }
   allTxs: Transaction[] | null // oldest first
-  goal: GoalProfile | null
-  plan: Plan | null
+  spendingClasses: Record<string, SpendingClass> | null
   mortgage: Mortgage | null
   baskets: Baskets | null
   benchmark?: Benchmark | null
   area?: AreaView | null
 }): string {
   // The data may stop well before the calendar date; what counts as "now" for
-  // the customer's figures is their latest transaction, as on the plan.
+  // the customer's figures is their latest transaction.
   const latest = d.allTxs?.length ? d.allTxs[d.allTxs.length - 1].tx_date : null
   const out: string[] = [latest ? `Account data up to: ${latest}` : `Today: ${new Date().toISOString().slice(0, 10)}`]
   if (d.balance !== null) out.push(`Current account balance: ${eur(d.balance)}`)
@@ -104,6 +101,33 @@ export function buildContext(d: {
     )
   }
 
+  if (d.spendingClasses && d.allTxs?.length) {
+    const months = [...new Set(d.allTxs.map((tx) => tx.tx_date.slice(0, 7)))].sort().slice(0, -1).slice(-3)
+    if (months.length) {
+      const window = new Set(months)
+      const totals = new Map<SpendingClass, Map<string, number>>(
+        (['essential', 'flexible', 'saving'] as const).map((type) => [type, new Map<string, number>()]),
+      )
+      for (const tx of d.allTxs) {
+        if (tx.tx_amount_eur >= 0 || !window.has(tx.tx_date.slice(0, 7))) continue
+        const key = spendingKey(tx)
+        const type = key ? d.spendingClasses[key] : undefined
+        if (!type) continue
+        const categories = totals.get(type)!
+        const category = tx.category ?? 'Other'
+        categories.set(category, (categories.get(category) ?? 0) - tx.tx_amount_eur)
+      }
+      const label = (type: SpendingClass) =>
+        type === 'essential' ? 'Essentials' : type === 'flexible' ? 'Flexible spending' : 'Money set aside'
+      out.push('', `Laya's labels by category and transaction type over the last ${months.length} full month(s):`)
+      for (const type of ['essential', 'flexible', 'saving'] as const) {
+        const categories = [...totals.get(type)!.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
+        if (categories.length) out.push(`- ${label(type)}: ${categories.map(([name, amount]) => `${name} ${eur(amount)}`).join(', ')}`)
+      }
+      out.push('- These are estimates for transaction categories and types, not labels for a specific shop or item.')
+    }
+  }
+
   const bm = d.benchmark
   if (bm?.lines.length) {
     const who = bm.group === 'all' ? 'people in Finland (age unknown)' : `Finns aged ${bm.group}, the customer's age group`
@@ -128,24 +152,6 @@ export function buildContext(d: {
       ...(a.housingShare !== null ? [`- Housing takes ${pct(a.housingShare)} of the customer's income`] : []),
       `- Neighbours: ${pct(a.renters)} of households rent, ${pct(a.livingAlone)} live alone, ${a.householdSize} people per household; median income after tax ${eur(a.medianIncomeMonthly)} a month${a.income ? ` (the customer's: ${eur(a.income)})` : ''}`,
     )
-  }
-
-  out.push('', d.goal ? `Goal for ${d.goal.year}: ${goalStatement(d.goal)}` : 'The customer has not set a goal yet (they can, on the overview page).')
-  const p = d.plan
-  if (p) {
-    out.push(
-      `Plan for the goal (shown to the customer as "Your plan"):`,
-      `- Usually sets aside ${eur(p.usualSaving)} a month`,
-      ...(p.requiredSaving !== null ? [`- Needs to set aside ${eur(p.requiredSaving)} a month to reach the goal on time`] : []),
-      `- The most they could set aside with every optional budget cut as far as sensible: ${eur(p.maxSaving)} a month`,
-      `- Goal reachable at this pace: ${p.reachable ? 'yes' : 'no'}`,
-      `- Safe to spend this week on everyday extras (shown as "Safe to spend this week"): ${eur(p.safeThisWeek)}. A week's share of the monthly budgets below${p.capped ? `, capped at the ${eur(p.remaining)} left of them in ${p.month}` : ''}; must-pay costs, regular and irregular, are covered outside them`,
-    )
-    if (p.categories.length) {
-      out.push(`Monthly budgets under the plan, and spending so far in ${p.month}:`)
-      for (const c of p.categories)
-        out.push(`- ${c.category}: usually ${eur(c.usual)}, budget ${eur(c.budget)}, spent ${eur(c.spent)}`)
-    }
   }
 
   if (d.allTxs?.length) {
@@ -174,9 +180,8 @@ export function buildContext(d: {
     const habits = makeHabits(d.allTxs)
     if (habits) out.push('', ...habitLines(habits))
 
-    // Every switch a published Finnish price comparison supports, including the
-    // ones the app's own card keeps for customers whose goal is out of reach.
-    const switches = suggestions(d.allTxs, true)
+    // Every switch a published Finnish price comparison supports.
+    const switches = suggestions(d.allTxs)
     if (switches.length) {
       out.push('', 'Cheaper ways to cover the same needs, with the estimated saving where a published Finnish price comparison gives one:')
       for (const t of switches)

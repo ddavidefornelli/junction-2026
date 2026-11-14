@@ -1,24 +1,15 @@
 # Spending insights: what we built and what it rests on
 
-Working notes for the plan, the reference-budget comparison and the "Where you
-could pay less" card. Written 14 November 2026. Update it when the logic or a
-source changes.
+Working notes for the three spending baskets, public comparisons and the
+"Where you could pay less" card. Written 14 November 2026. Update it when the
+logic or a source changes.
 
-> **Update, 14 November 2026 (later the same day).** The household, home and
-> commute questions were removed from the goal form to keep it simple. With no
-> household to match, the reference-budget comparison, the floor on cuts and
-> the "tight plan" test went with them, and so did the household adjustments to
-> the cut limits. Sections 3.2 and 3.3 describe what was built and is now
-> removed; the code is in git history (commit `c13f03f`, file
-> `client/src/refbudget.ts`). Why it was removed: the floor compared one
-> person's account with a whole household's budget, so two adults got almost no
-> room to save while "3+ adults", which has no published budget, got the most.
->
-> What applies now:
-> - Cut limits: optional categories 50%, groceries and transport 0%, taxis and
->   bars 50%, convenience stores 30%, health care never budgeted.
-> - "Tight only" tips are shown when the goal is out of reach with the budgets alone.
-> - The MCC labels, MCC budget lines, tips and their sources (3.1, 3.4, 4) are unchanged.
+> **Current behavior, 14 November 2026.** The annual goal form and its monthly
+> spending plan have been removed. Laya now classifies purchase categories and
+> transaction types as essential, flexible or money set aside, without needing
+> a personal goal. Savings tips are shown directly from spending patterns.
+> Sections below that describe the old goal plan are historical notes only;
+> MCC labels, tips and their sources remain in use.
 
 ## 1. What the dataset gives us
 
@@ -45,10 +36,9 @@ Profiled from the full `tx_junction_transactions.csv` (3.6M rows, 5,100 customer
 |---|---|
 | Merchant id is not used | No price or location signal. A first version invented shop names and €/€€/€€€ price levels per id; it was removed because nothing in it was real. |
 | MCC is used | It splits a category into essential and optional parts, and names the kind of place. |
-| Reference budgets define "tight" | An official Finnish figure for what a household needs, instead of our own threshold. |
+| Laya classifies without a personal goal | It labels each spending category and transaction type as essential, flexible or money set aside. MCC and merchant do not affect the label. |
 | Tips carry a figure only when a Finnish source gives one | Butcher and fuel tips have no euro figure because no published comparison was found. |
-| Laya's verdicts are unchanged | Still by category and transaction type. Its prompts were tuned by measurement, so asking it about MCCs needs a re-test. |
-| The reference budget is a floor on cuts | No group of budgets is cut below the reasonable minimum for the household. This lowers how much a plan can free, and so the paces the goal form offers. |
+| Reference-budget comparison and goal plan | Removed from the app; the detailed notes below are historical. |
 
 ## 3. How it works
 
@@ -64,8 +54,8 @@ Profiled from the full `tx_junction_transactions.csv` (3.6M rows, 5,100 customer
 | 5499 | Convenience store | Convenience stores | 30% |
 | 5912, 8011, 8021, 8099 | Pharmacy, doctor, dentist, health service | none | never budgeted or flagged |
 
-The cut limits (50%, 30%) are our own judgement, not sourced. Every other MCC
-stays inside its category's budget; purchases with no MCC follow the category rule.
+The removed goal plan used the cut limits shown above. The current app uses MCC
+to describe the kind of place and calculate source-backed savings tips.
 
 ### 3.2 Reference budgets (removed, see the update at the top)
 
@@ -133,9 +123,9 @@ Computed from the last three full months. A tip with a figure needs at least
 |---|---|---|---|---|
 | Convenience store (5499) | Hypermarket instead | 16% | always | ruoanhinta.fi, 8/2026 |
 | Taxi (4121) | Public transport instead | 75% | always | Traficom 6/2024; HSL 2026 |
-| Restaurant (5812) | One meal in four at home | 80% of a quarter of the spend | tight only | Helsingin Sanomat; reference budgets 2025 |
-| Staffed service station (5541) | Self-service pump | no figure | tight only | Iltalehti 7/2022 |
-| Butcher (5422) | Compare price per kilo with supermarket meat | no figure | tight only | none found |
+| Restaurant (5812) | One meal in four at home | 80% of a quarter of the spend | shown when threshold is met | Helsingin Sanomat; reference budgets 2025 |
+| Staffed service station (5541) | Self-service pump | no figure | shown when threshold is met | Iltalehti 7/2022 |
+| Butcher (5422) | Compare price per kilo with supermarket meat | no figure | shown when threshold is met | none found |
 
 ## 4. Sources and the figures taken from them
 
@@ -198,26 +188,12 @@ table shows 54; the code follows the university table.
 
 ## 5. What is our own assumption, in one place
 
-- Cut limits per kind: taxis and bars 50%, convenience stores 30%.
-- Tight margin: within 10% of the reference budget.
-- "One restaurant meal in four" as the realistic share to move home.
-- All taxi and convenience-store spending is treated as movable.
-- The grouping of published rows to bank categories (section 3.2).
-- The household matching where ages and sex are unknown (section 3.2).
-- Tip thresholds: €5 a month saving, €20 a month spending, three-month window.
+- Tip thresholds: €5 a month saving, €20 a month spending, three full months.
+- Published percentages estimate savings from the customer's own synthetic spending; they are not transaction prices.
 
 ## 6. Open questions
 
-- With the floor in place, some goals that were reachable are now out of
-  reach. Is the "out of reach" message enough, or should the plan suggest the
-  nearest reachable date?
-- Ask the customer's **age band and children's ages** to pick the exact
-  reference household? The customer table already has `customer_age`.
 - The butcher tip has no source. Keep it figure-less, drop it, or look for a
   price-per-kilo dataset?
-- Use the MCC in **Laya's verdicts** (needs a re-test of its prompts).
-- Name the cause on over-budget tags ("Taxis over budget").
 - Reference budgets are 2025 prices and the transactions run to late 2026:
   index them with Statistics Finland's consumer price index?
-- If the household questions come back: compare per adult rather than per
-  household, or ask whether the account covers the whole household's spending.

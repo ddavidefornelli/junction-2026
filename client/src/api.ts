@@ -119,29 +119,28 @@ export async function getMortgage(customerId: string): Promise<Mortgage | null> 
   return rows[0] ?? null
 }
 
-export type Verdict = 'good' | 'bad' | 'neutral'
+export type SpendingClass = 'essential' | 'flexible' | 'saving'
 
-// Purchases of the same kind get the same verdict, so each kind is classified once.
-// Only money going out is classified; income has no verdict.
-export const verdictKey = (tx: Transaction) =>
+// Matching category and transaction type share one Laya label.
+export const spendingKey = (tx: Transaction) =>
   tx.tx_amount_eur < 0 ? `${tx.category}|${tx.transaction_type}` : null
 
-export async function classify(goal: string, txs: Transaction[]): Promise<Record<string, Verdict>> {
+export async function classify(txs: Transaction[]): Promise<Record<string, SpendingClass>> {
   const kinds = new Map<string, Pick<Transaction, 'category' | 'transaction_type'>>()
   for (const tx of txs) {
-    const key = verdictKey(tx)
+    const key = spendingKey(tx)
     if (key) kinds.set(key, { category: tx.category, transaction_type: tx.transaction_type })
   }
   if (kinds.size === 0) return {}
   const res = await fetch('/api/classify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ goal, purchases: [...kinds.values()] }),
+    body: JSON.stringify({ purchases: [...kinds.values()] }),
   })
   if (!res.ok) {
     const detail = await res.json().catch(() => null)
     throw new Error(typeof detail?.error === 'string' ? detail.error : `Request failed (${res.status})`)
   }
-  const verdicts: Verdict[] = await res.json()
-  return Object.fromEntries([...kinds.keys()].map((key, i) => [key, verdicts[i]]))
+  const classes: SpendingClass[] = await res.json()
+  return Object.fromEntries([...kinds.keys()].map((key, i) => [key, classes[i]]))
 }

@@ -1,13 +1,11 @@
 // Purchase classifier built on Laya, a small open-source decision model.
 // Runs in the dev server only, so no key reaches the browser.
 //
-// Laya is too small to judge "is this purchase good for this goal?" in one
-// step (asked directly it answers "good" or "neutral" to almost everything).
-// It is reliable on simpler questions, so it answers three of those and the
-// verdict is combined from them in verdictFor().
+// Laya classifies each kind of transaction on its own, without needing a
+// customer goal. The result is a helpful label, not a judgement of a person.
 
-export const VERDICTS = ['good', 'bad', 'neutral'] as const
-export type Verdict = (typeof VERDICTS)[number]
+export const SPENDING_CLASSES = ['essential', 'flexible', 'saving'] as const
+export type SpendingClass = (typeof SPENDING_CLASSES)[number]
 
 export type PurchaseKind = { category: string | null; transaction_type: string | null }
 
@@ -29,7 +27,6 @@ export class ClassifyError extends Error {
 
 const HOSTED_URL = 'https://api.laya-ai.com'
 const MAX_KINDS = 64
-const MAX_GOAL_LENGTH = 300
 const MAX_CACHED_ANSWERS = 5000
 const answers = new Map<string, Promise<unknown>>()
 
@@ -45,65 +42,43 @@ function retryDelay(res: Response | null, fallback: number) {
   return base + Math.random() * 200 // spread the parallel calls out
 }
 
-// The wording, the state shapes and even the one-letter labels below were
-// picked by measuring the model's answers; change them only with a re-test.
+// The wording, state shape and one-letter labels below were measured with the
+// model; change them only with a re-test.
 
-// 1. What kind of spending is it? State: {category, type}.
+// What kind of spending is it? State: {category, type}.
 type Spending = 'n' | 'd' | 's'
 const SPENDING_QUESTION = {
   type: 'choice',
-  instructions: 'What kind of spending is this?',
+  instructions: 'What kind of money movement is this?',
   criteria: {
-    n: 'A basic living cost that people cannot avoid: groceries, rent, mortgage or other housing payments, utilities, insurance, health care, commuting and transport.',
-    d: 'Optional spending people choose to do: restaurants, entertainment, shopping, lifestyle, electronics and things for the home, holidays and travel.',
-    s: 'Money put aside for later: a savings or investment deposit.',
+    n: 'An essential cost for everyday life: groceries, rent, mortgage or other housing payments, utilities, insurance, health care, commuting and transport.',
+    d: 'Flexible spending people can choose: restaurants, entertainment, shopping, lifestyle, electronics and things for the home, holidays and travel.',
+    s: 'Money moved aside for later: a savings or investment deposit.',
   },
 }
 
-// 2. Is the goal about money? State: "Goal: …". Answer: probability of yes.
-const SAVING_GOAL_QUESTION = {
-  type: 'noul',
-  instructions:
-    'Is this goal about saving money, spending less, paying off debt or building up money for something?',
-}
-
-// 3. Is the spending what the goal talks about? State: {goal, spending}.
-const SAME_TOPIC_QUESTION = {
-  type: 'noul',
-  instructions: 'Is the spending the same kind of activity that the goal mentions?',
-}
-
-function verdictFor(spending: Spending, savingGoal: boolean, sameTopic: boolean): Verdict {
-  // Money put aside helps a money goal.
-  if (spending === 's') return savingGoal || sameTopic ? 'good' : 'neutral'
-  // Optional spending hurts a money goal; otherwise it helps only if it is what the goal is about.
-  if (spending === 'd') return savingGoal ? 'bad' : sameTopic ? 'good' : 'neutral'
-  // Necessities (groceries, housing, utilities…) are neutral, unless a
-  // non-money goal is about exactly that, e.g. "get fit" and health.
-  return !savingGoal && sameTopic ? 'good' : 'neutral'
+function spendingClass(spending: Spending): SpendingClass {
+  if (spending === 'n') return 'essential'
+  if (spending === 'd') return 'flexible'
+  return 'saving'
 }
 
 const words = (s: string | null) => (s ?? 'unknown').replace(/_/g, ' ')
 
-// Returns one verdict per purchase kind, in order.
+// Returns one spending label per purchase kind, in order.
 export async function classifyPurchases(
   config: LayaConfig,
-  goal: unknown,
   kinds: unknown,
-): Promise<Verdict[]> {
+): Promise<SpendingClass[]> {
   const baseUrl = (config.baseUrl || HOSTED_URL).replace(/\/+$/, '')
   if (baseUrl === HOSTED_URL && !config.apiKey)
     throw new ClassifyError(503, 'Set LAYA_API_KEY in server/.env (or LAYA_BASE_URL for a local Laya server)')
-  if (typeof goal !== 'string' || !goal.trim() || goal.length > MAX_GOAL_LENGTH)
-    throw new ClassifyError(400, 'Invalid goal')
   if (!Array.isArray(kinds) || kinds.length === 0 || kinds.length > MAX_KINDS)
     throw new ClassifyError(400, `Expected 1–${MAX_KINDS} purchases`)
   if (kinds.some((k) => !k || typeof k !== 'object' ||
     (k.category != null && typeof k.category !== 'string') ||
     (k.transaction_type != null && typeof k.transaction_type !== 'string')))
     throw new ClassifyError(400, 'Invalid purchase')
-  const goalText = goal.trim()
-
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`
 
@@ -141,9 +116,8 @@ export async function classifyPurchases(
     if (!answer || typeof answer !== 'object') throw new ClassifyError(502, 'Unexpected response from Laya')
     return answer as Record<string, unknown>
   }
-  // Answers depend only on the question asked, and customers share most of
-  // them (the same purchase kinds, the same preset goals), so each is fetched
-  // once per running server and reused. Failures are not kept.
+  // Answers depend only on the transaction kind, so they can be reused across
+  // customers. Failures are not kept.
   function once<T>(state: unknown, question: object, read: (answer: Record<string, unknown>) => T): Promise<T> {
     const key = JSON.stringify([baseUrl, state, question])
     let answer = answers.get(key) as Promise<T> | undefined
@@ -155,12 +129,6 @@ export async function classifyPurchases(
     }
     return answer
   }
-  const yes = (state: unknown, question: object) =>
-    once(state, question, ({ noul }) => {
-      if (typeof noul !== 'number' || !Number.isFinite(noul))
-        throw new ClassifyError(502, 'Unexpected response from Laya')
-      return noul > 0.5
-    })
   const spendingKind = (state: unknown) =>
     once(state, SPENDING_QUESTION, ({ choice }) => {
       if (choice !== 'n' && choice !== 'd' && choice !== 's')
@@ -168,17 +136,10 @@ export async function classifyPurchases(
       return choice
     })
 
-  // Resolve this shared question before spawning the per-kind requests, so a
-  // failed round cannot leave its promise rejected and unobserved.
-  const savingGoal = await yes(`Goal: ${goalText}`, SAVING_GOAL_QUESTION)
   return Promise.all(
     (kinds as PurchaseKind[]).map(async (k) => {
       const category = words(k.category)
-      const [spending, sameTopic] = await Promise.all([
-        spendingKind({ category, type: words(k.transaction_type) }),
-        yes({ goal: goalText, spending: category.toLowerCase() }, SAME_TOPIC_QUESTION),
-      ])
-      return verdictFor(spending, savingGoal, sameTopic)
+      return spendingClass(await spendingKind({ category, type: words(k.transaction_type) }))
     }),
   )
 }

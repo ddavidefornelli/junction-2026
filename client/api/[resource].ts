@@ -36,12 +36,12 @@ export default async function handler(req: Request, res: Response) {
       // The ".js" is required: the function runs as an ES module, where Node
       // does not resolve an import without its extension.
       const { classifyPurchases } = await import('../laya.js')
-      const { goal, purchases } = (req.body ?? {}) as { goal?: unknown; purchases?: unknown }
+      const { purchases } = (req.body ?? {}) as { purchases?: unknown }
       const config = {
         baseUrl: process.env.LAYA_BASE_URL,
         apiKey: process.env.LAYA_API_KEY,
       }
-      return res.json(await classifyPurchases(config, goal, purchases))
+      return res.json(await classifyPurchases(config, purchases))
     } catch (error) {
       const { status, message } = failure(error)
       console.error('[api/classify] Request failed', { status, message, error })

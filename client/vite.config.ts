@@ -11,7 +11,7 @@ const TABLES = ['customers', 'transactions', 'mortgage_applications']
 
 // API for the client:
 //   GET  /api/<table>?<postgrest query>   read-only Supabase access
-//   POST /api/classify {goal, purchases}  good / bad / neutral verdicts from Laya (laya.ts)
+//   POST /api/classify {purchases}       essential / flexible / saving labels from Laya (laya.ts)
 //   POST /api/chat {context, messages, ledger}  the assistant's reply from OpenAI, streamed as plain text (chat.ts)
 //   POST /api/mortgage-steps {context}    AI-written next steps towards the mortgage, as JSON (chat.ts)
 //   POST /api/scenarios {context}         Walter's personalised what-if questions, as JSON (scenarios.ts)
@@ -47,7 +47,7 @@ function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig, t
               }
               return res.end()
             }
-            res.end(JSON.stringify(await classifyPurchases(laya, body.goal, body.purchases)))
+            res.end(JSON.stringify(await classifyPurchases(laya, body.purchases)))
           } catch (e) {
             const known = e instanceof ClassifyError || e instanceof ChatError || e instanceof ScenarioError || e instanceof TtsError
             res.statusCode = known ? e.status : 400
