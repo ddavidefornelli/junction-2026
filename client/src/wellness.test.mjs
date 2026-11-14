@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import { strict as assert } from 'node:assert'
-import { calculateWellness, emptyAnswers, wellnessScores } from './wellness.ts'
+import { calculateWellness, emptyAnswers, visibleWellnessScore, wellnessScores } from './wellness.ts'
 
 const tx = (day, amount, balance) => ({
   tx_date: day, tx_timestamp: `${day}T12:00:00Z`, bank_account_id: 'A',
@@ -11,6 +11,7 @@ test('missing survey or incomplete months do not yield a total', () => {
   const w = calculateWellness([tx('2026-01-15', 100, 100), tx('2026-02-15', -20, 80)])
   assert.equal(w.observedMonths, 0)
   assert.equal(wellnessScores(w, emptyAnswers()).total, null)
+  assert.deepEqual(visibleWellnessScore(w, emptyAnswers()), { value: 100, provisional: true })
 })
 
 test('months without activity count as non-saving months', () => {
@@ -34,4 +35,9 @@ test('four weighted dimensions sum to 100 when all inputs are available', () => 
   })
   assert.equal(wellnessScores({ ...w, savingsRate: null }, answers).total, null)
   assert.equal(wellnessScores(w, { ...answers, budget: null }).total, null)
+  assert.deepEqual(visibleWellnessScore(w, emptyAnswers()), { value: 100, provisional: true })
+  assert.deepEqual(visibleWellnessScore(w, answers), { value: 100, provisional: false })
+  assert.deepEqual(visibleWellnessScore({ ...w, savingsRate: 0.1, averageBalance: 0 }, emptyAnswers()), { value: 37, provisional: true })
+  assert.deepEqual(visibleWellnessScore({ ...w, savingsRate: null }, answers), { value: null, provisional: false })
+  assert.deepEqual(visibleWellnessScore({ ...w, outgoing: 0 }, emptyAnswers()), { value: null, provisional: false })
 })

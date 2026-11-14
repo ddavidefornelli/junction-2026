@@ -23,7 +23,7 @@ const words = (s: string | null) => (s ?? 'unknown').replace(/_/g, ' ')
 export function buildContext(d: {
   balance: number | null
   wellness: Wellness | null
-  score: number | null
+  score: { value: number | null; provisional: boolean }
   allTxs: Transaction[] | null // oldest first
   goal: GoalProfile | null
   plan: Plan | null
@@ -42,9 +42,11 @@ export function buildContext(d: {
       `- Average balance: ${eur(w.averageBalance)}`,
       `- Days overdrawn: ${w.negativeDays}`,
       `- Housing and utilities: ${eur(w.essentials)}`,
-      d.score === null
-        ? '- Illustrative financial score unavailable until account data and questionnaire answers are complete; do not estimate it.'
-        : `- Illustrative financial score: ${d.score} / 100 (resilience 35, perception 25, knowledge 20, behaviors 20; not a credit score)`,
+      d.score.value === null
+        ? '- Illustrative financial score unavailable: not enough account activity; do not estimate it.'
+        : d.score.provisional
+          ? `- Preliminary financial score: ${d.score.value} / 100 (based only on account activity: resilience scaled from 35 to 100; NOT the full financial score; questionnaire and complete months still needed)`
+          : `- Full illustrative financial score: ${d.score.value} / 100 (resilience 35, perception 25, knowledge 20, behaviors 20; not a credit score)`,
     )
   }
 
