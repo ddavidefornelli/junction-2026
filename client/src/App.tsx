@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import {
   PAGE_SIZE,
   getCustomer,
@@ -23,7 +23,6 @@ import { makeBenchmark, type Benchmark } from './benchmarks'
 import { Chat } from './Chat'
 import { WalterAvatar } from './WalterAvatar'
 import { ChatDialog } from './ChatDialog'
-import { WhatIfDialog } from './WhatIfDialog'
 import { WellnessApple } from './WellnessApple'
 import { buildContext, ledgerOf, type ChatMessage } from './assistant'
 import { AnalysisSteps, useStagedProgress } from './Analysis'
@@ -34,6 +33,7 @@ import { InsightCard } from './InsightCard'
 import { ChallengeCard, useChallenge } from './ChallengeCard'
 import { FutureCard } from './FutureCall'
 import { makeFuture } from './future'
+import { makeStatus, type Part, type Status } from './status'
 import { makeInsights } from './insights'
 
 const SESSION_KEY = 'customerId'
@@ -284,13 +284,16 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
     [postalCode, baskets],
   )
   const benchmark = useMemo(() => (allTxs && baskets ? makeBenchmark(allTxs, baskets.months, age) : null), [allTxs, baskets, age])
+  // How the customer's money is doing decides what their app looks like (status.ts).
+  const status = useMemo(
+    () => makeStatus({ score: wellness ? visibleWellnessScore(wellness, answers).value : null, baskets, all: allTxs }),
+    [wellness, answers, baskets, allTxs],
+  )
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatOpen, setChatOpen] = useState(false)
-  const [scenariosOpen, setScenariosOpen] = useState(false)
   const [chatPrompt, setChatPrompt] = useState<{ id: number; text: string } | null>(null)
   const nextChatPrompt = useRef(0)
   const askScenario = (question: string) => {
-    setScenariosOpen(false)
     setChatPrompt({ id: ++nextChatPrompt.current, text: question })
     setChatOpen(true)
   }
@@ -390,7 +393,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   ]
 
   return (
-    <div className="mx-auto min-h-dvh max-w-2xl px-4 pb-28">
+    <div className="mx-auto min-h-dvh max-w-2xl px-4 pb-28" data-mode={status.mode} style={{ '--color-accent': status.accent } as CSSProperties}>
       <header className="flex items-center justify-between py-5">
         <span className="font-display text-2xl font-extrabold tracking-tight">Pankki</span>
         <div className="flex items-center gap-3 text-sm sm:gap-4">
@@ -429,6 +432,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           benchmark={benchmark}
           area={area}
           customerId={customerId}
+          status={status}
           age={age}
           context={chatContext}
           allTxs={allTxs}
@@ -449,7 +453,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
           error={wellnessError}
           onBack={() => setView('overview')}
           onShowWellness={() => setView('wellness')}
-          onWhatIf={() => setScenariosOpen(true)}
+          onImprove={() => askScenario(IMPROVE_PROMPT)}
         />
       ) : view === 'transactions' ? (
         <Transactions
@@ -503,17 +507,10 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
             onMessages={setChatMessages}
             context={chatContext}
             ledger={chatLedger}
-            starters={['How am I doing?', 'Where could I cut back?', 'What did I spend in the last two weeks?', 'What should I focus on first?']}
+            starters={status.starters}
           />
         )}
       />
-      {scenariosOpen && (
-        <WhatIfDialog
-          context={chatContext}
-          onPick={askScenario}
-          onClose={() => setScenariosOpen(false)}
-        />
-      )}
       {chatOpen && (
         <ChatDialog onClose={() => {
           setChatOpen(false)
@@ -524,7 +521,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
             onMessages={setChatMessages}
             context={chatContext}
             ledger={chatLedger}
-            starters={['How am I doing?', 'Where could I cut back?', 'What did I spend in the last two weeks?', 'What should I focus on first?']}
+            starters={status.starters}
             prompt={chatPrompt}
             onPromptHandled={() => setChatPrompt(null)}
           />
@@ -597,6 +594,7 @@ function Overview({
   benchmark,
   area,
   customerId,
+  status,
   age,
   context,
   allTxs,
@@ -614,6 +612,7 @@ function Overview({
   benchmark: Benchmark | null
   area: AreaView | null
   customerId: string
+  status: Status
   age: number | null
   context: string | null // what Walter knows; the future self answers from it too
   allTxs: Transaction[] | null
@@ -630,8 +629,8 @@ function Overview({
   const score = displayScore.value
   // What is shown is picked from the customer's own data, the most valuable first (see insights.ts).
   const insights = useMemo(
-    () => (allTxs ? makeInsights({ score, baskets, benchmark, tips, all: allTxs }) : []),
-    [allTxs, score, baskets, benchmark, tips],
+    () => (allTxs ? makeInsights({ score, baskets, benchmark, tips, all: allTxs }).slice(0, status.shown) : []),
+    [allTxs, score, baskets, benchmark, tips, status.shown],
   )
   const [challenge, setChallenge] = useChallenge(customerId)
   const challengeCard = allTxs && (
@@ -648,6 +647,18 @@ function Overview({
         <p className="mt-3 font-display text-5xl font-extrabold tracking-tight sm:text-6xl">
           <CipherText id="balance" text={eur(latest.balance_after_eur)} />
         </p>
+        {status.figure && (
+          <div className="mt-6 border-t border-white/25 pt-5">
+            <p className="inline-block rounded-full bg-white px-3 py-1 text-xs font-bold text-accent">{status.name}</p>
+            <p className="mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">{status.figure}</p>
+            <p className="mt-1 text-sm text-white/90">{status.caption}</p>
+            {status.progress !== null && (
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/25" role="progressbar" aria-label="Safety money saved" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(status.progress * 100)}>
+                <div className="h-full rounded-full bg-white" style={{ width: `${Math.min(100, status.progress * 100)}%` }} />
+              </div>
+            )}
+          </div>
+        )}
         <p className="mt-4 text-xs text-white/85">Read-only view. Nothing in this app can move your money.</p>
       </section>
 
@@ -679,16 +690,17 @@ function Overview({
         </div>
       </Card>
 
-      {future && <FutureCard future={future} context={context} age={age} />}
-
-      {/* A running challenge comes first; the offer to start one comes after the insights. */}
+      {/* The order of these depends on the customer's mode; a running challenge always comes first. */}
       {challenge && challengeCard}
-
-      {insights.map((insight, i) => (
-        <InsightCard key={insight.id} insight={insight} first={i === 0} onAsk={onAsk} />
-      ))}
-
-      {!challenge && challengeCard}
+      {status.order.map((part: Part) =>
+        part === 'future' ? (
+          future && <FutureCard key={part} future={future} context={context} age={age} />
+        ) : part === 'challenge' ? (
+          !challenge && <Fragment key={part}>{challengeCard}</Fragment>
+        ) : (
+          insights.map((insight, i) => <InsightCard key={insight.id} insight={insight} first={i === 0} onAsk={onAsk} />)
+        ),
+      )}
 
       {(baskets || benchmark || area || tips.length > 0) && (
         <details className="group">
@@ -751,14 +763,17 @@ function TipsCard({ tips }: { tips: Suggestion[] }) {
   )
 }
 
-function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWellness, onWhatIf }: {
+// What the "How can I improve?" button on the score page asks Walter.
+const IMPROVE_PROMPT = 'How can I improve my financial profile score? Give me the three changes that would raise it the most, using my own numbers, and tell me which one to start with.'
+
+function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWellness, onImprove }: {
   wellness: Wellness | null
   answers: WellnessAnswers
   loading: boolean
   error: boolean
   onBack: () => void
   onShowWellness: () => void
-  onWhatIf: () => void
+  onImprove: () => void // asks Walter how to raise the score
 }) {
   const [openDetails, setOpenDetails] = useState<string | null>(null)
   const [activeTip, setActiveTip] = useState(0)
@@ -881,8 +896,8 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
             </li>
           ))}
         </ol>
-        <button type="button" onClick={onWhatIf} className="mt-4 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
-          What if scenarios
+        <button type="button" onClick={onImprove} className="mt-4 rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+          How can I improve?
         </button>
         {openDetails === 'levels' && (
           <p id="score-levels" className="mt-4 rounded-2xl bg-paper p-4 text-sm leading-relaxed text-ink">
