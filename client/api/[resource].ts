@@ -14,8 +14,8 @@ type Response = {
 const TABLES = new Set(['customers', 'transactions', 'mortgage_applications'])
 
 export default async function handler(req: Request, res: Response) {
-  const { pathname, search } = new URL(req.url ?? '/', 'http://localhost')
-  const resource = pathname.split('/').filter(Boolean).at(-1)
+  const requestUrl = new URL(req.url ?? '/', 'http://localhost')
+  const resource = requestUrl.pathname.split('/').filter(Boolean).at(-1)
 
   if (resource === 'classify') {
     if (req.method !== 'POST') return res.status(405).end()
@@ -49,7 +49,11 @@ export default async function handler(req: Request, res: Response) {
   }
 
   try {
-    const upstream = await fetch(`${url}/rest/v1/${resource}${search}`, {
+    // Vercel exposes dynamic route params as query params too; don't pass
+    // `resource=customers` through to PostgREST as a database filter.
+    requestUrl.searchParams.delete('resource')
+    const query = requestUrl.searchParams.toString()
+    const upstream = await fetch(`${url}/rest/v1/${resource}${query ? `?${query}` : ''}`, {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
     })
     res.setHeader('Content-Type', 'application/json')
