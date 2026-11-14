@@ -111,7 +111,7 @@ export function calendar(entries: Entry[], today: string): string {
   return [
     asOf === today
       ? `- Today is ${today} (${WEEKDAYS[weekday(today)]}).`
-      : `- The account data ends on ${asOf} (${WEEKDAYS[weekday(asOf)]}), the day of the latest transaction. Treat that day as today: "this month" is ${asOf.slice(0, 7)}, "last month" is ${addMonths(asOf, -1).slice(0, 7)}, and every recent period counts back from it, exactly as listed below. When you answer about a recent period, say in a few words that the data ends on that day.`,
+      : `- The account data ends on ${asOf} (${WEEKDAYS[weekday(asOf)]}), the day of the latest transaction. Treat that day as today: "this month" is ${asOf.slice(0, 7)}, "last month" is ${addMonths(asOf, -1).slice(0, 7)}, and every recent period counts back from it, exactly as listed below. Mention that the data ends on that day only once in a conversation, and only when it changes the answer.`,
     `- The earliest transaction is from ${first}.`,
     '- Ready-made periods, first and last day included:',
     `  yesterday: ${addDays(asOf, -1)}`,

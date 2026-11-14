@@ -12,7 +12,7 @@
 
 import type { Transaction } from './api'
 import type { Baskets } from './baskets.ts'
-import { BUFFER_MONTHS, dailyBalance } from './insights.ts'
+import { BUFFER_MONTHS, bufferPlanFor, dailyBalance } from './insights.ts'
 
 export type Mode = 'start' | 'rescue' | 'build' | 'grow' | 'cruise'
 // The parts of the overview whose order depends on the mode.
@@ -84,14 +84,15 @@ export function makeStatus(d: { score: number | null; baskets: Baskets | null; a
   }
 
   if (cover < BUFFER_MONTHS) {
-    const wait = kept > 0 ? Math.ceil((target - balance) / kept) : null
+    const plan = bufferPlanFor(all, b, balance)
+    const wait = plan ? plan.months : null
     return {
       mode: 'build',
       name: 'Buffer mode',
       why: `You have ${cover.toFixed(1)} months of spending saved. The goal is ${BUFFER_MONTHS}.`,
       focus: 'Your app puts building your safety money first.',
       figure: `${cover.toFixed(1)} of ${BUFFER_MONTHS} months`,
-      caption: `saved for bad days. ${eur(target - balance)} to go${wait === null ? '' : `: ${months(wait)} at today’s pace`}`,
+      caption: `saved for bad days. ${eur(target - balance)} to go${wait === null ? '' : `: ${months(wait)} with your plan`}`,
       progress: Math.max(0, cover / BUFFER_MONTHS),
       accent: '#2b3fff',
       starters: [`How fast can I reach ${BUFFER_MONTHS} months saved?`, 'Where could I cut back?', 'What should I focus on first?', 'What did I spend in the last two weeks?'],

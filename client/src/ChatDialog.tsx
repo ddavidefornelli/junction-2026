@@ -32,7 +32,7 @@ export function ChatDialog({ onClose, children }: { onClose: () => void; childre
               Walter
             </h2>
             <p className="text-xs text-muted" aria-live="polite">
-              {voice.loading ? 'Getting ready to speak…' : voice.speaking ? 'Speaking…' : 'Your Pankki assistant'}
+              {voice.loading ? 'Getting ready to speak…' : voice.speaking ? 'Speaking…' : 'Your S-Pankki assistant'}
             </p>
           </div>
           <div role="radiogroup" aria-label="How to talk with Walter" className="flex rounded-full bg-paper p-1 text-xs">

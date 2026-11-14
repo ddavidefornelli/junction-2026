@@ -61,3 +61,32 @@ test('four at most, the most valuable first', () => {
   assert.ok(list.length > 0 && list.length <= 4)
   assert.deepEqual(list.map((x) => x.value), list.map((x) => x.value).sort((a, z) => z - a))
 })
+
+test('a need above the typical figure is never the opportunity; an optional one is', () => {
+  const h = history({ salary: 3000, rent: 900, fun: 300, start: 9000 })
+  const benchmark = (category) => ({ group: '55–64', months: 6, you: 300, typical: 100, lines: [{ category, you: 300, typical: 100, ratio: 3 }] })
+  const run = (category) => makeInsights({ score: 70, baskets: makeBaskets(h), benchmark: benchmark(category), tips: [], all: h })
+  for (const need of ['Health', 'Groceries', 'Transportation', 'Home & Tech']) assert.ok(!run(need).some((x) => x.id === 'benchmark'), need)
+  assert.ok(run('Restaurants').some((x) => x.id === 'benchmark'))
+})
+
+import { bufferPlan } from './insights.ts'
+
+test('a buffer plan aims for about a year, not whatever is left over', () => {
+  // 17 € left, 150 € invested, 430 € of fun extras, 1 500 € to go: about 125 € a month is needed.
+  const p = bufferPlan({ gap: 1500, spare: 17, invested: 150, fun: 430 })
+  assert.equal(p.monthly, 125) // 15 € + 110 €
+  assert.equal(p.months, 12)
+  assert.deepEqual(p.parts.map((x) => x.from), ['left', 'invest'])
+})
+
+test('without investments, the plan finds the rest in fun extras', () => {
+  const p = bufferPlan({ gap: 1500, spare: 17, invested: 0, fun: 430 })
+  assert.deepEqual(p.parts.map((x) => x.from), ['left', 'fun'])
+  assert.ok(p.monthly >= 100 && p.monthly <= 125)
+})
+
+test('no gap, or nothing real to move, gives no plan', () => {
+  assert.equal(bufferPlan({ gap: 0, spare: 500, invested: 0, fun: 300 }), null)
+  assert.equal(bufferPlan({ gap: 3000, spare: 10, invested: 0, fun: 40 }), null)
+})

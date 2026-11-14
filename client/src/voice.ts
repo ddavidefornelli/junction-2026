@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { parseReply } from './assistant'
+import { spokenForm } from './speech'
 
 // Walter's voice in the browser: whether he reads his replies aloud, and
 // whether he is talking right now. Audio comes from /api/tts (ElevenLabs).
@@ -78,14 +79,14 @@ export function speakableText(reply: string): string {
   const text = parseReply(reply)
     .filter((p): p is string => typeof p === 'string')
     .join('\n\n')
-    .replace(/https:\/\/[^\s)]+/g, 'the link')
     .replace(/[*_`#>]+/g, '')
     .replace(/\(\s*\)/g, '')
     .replace(/[ \t]+/g, ' ')
     .trim()
-  if (text.length <= MAX_CHARS) return text
+  const said = spokenForm(text)
+  if (said.length <= MAX_CHARS) return said
   // Too long: stop at the last sentence that fits.
-  const cut = text.slice(0, MAX_CHARS)
+  const cut = said.slice(0, MAX_CHARS)
   const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('.\n'), cut.lastIndexOf('? '), cut.lastIndexOf('! '))
   return end > 0 ? cut.slice(0, end + 1) : cut
 }

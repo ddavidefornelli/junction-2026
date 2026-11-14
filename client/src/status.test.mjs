@@ -36,7 +36,7 @@ test('under three months saved is buffer mode, with progress towards it', () => 
   assert.equal(s.mode, 'build')
   assert.equal(s.figure, '1.5 of 3 months')
   assert.equal(s.progress, 0.5)
-  assert.match(s.caption, /8 months at today’s pace/) // 1 500 € to go at 200 € a month
+  assert.match(s.caption, /8 months with your plan/) // 1 500 € to go at 200 € a month
   assert.equal(s.order[0], 'challenge')
 })
 

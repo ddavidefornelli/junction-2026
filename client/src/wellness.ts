@@ -46,7 +46,7 @@ const FUN_MARGIN = 1.2 // fun extras up to this multiple of the usual month stil
 
 const clamp = (value: number, max: number) => Math.min(max, Math.max(0, value))
 
-// This is an illustrative model, NOT Intesa Sanpaolo's proprietary formula.
+// This is an illustrative model, NOT an official bank formula.
 // Unknown answers and insufficient transaction history are never scored as zero.
 export type WellnessAnswers = {
   control: number | null       // 0–4: perceived control over finances

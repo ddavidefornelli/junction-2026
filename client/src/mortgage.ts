@@ -94,7 +94,7 @@ export function mortgageLines(m: Mortgage, f: MortgageFacts): string[] {
     `- Required monthly income: ${eur(m.required_monthly_income_eur)}`,
     ...(f.rejected
       ? [
-          `- Approved applications at Pankki typically put in equity of ${pct(APPROVED_EQUITY_SHARE)} of the price and collateral of ${pct(APPROVED_COLLATERAL_COVER)} of the loan (a reference, not a fixed rule).`,
+          `- Approved applications at S-Pankki typically put in equity of ${pct(APPROVED_EQUITY_SHARE)} of the price and collateral of ${pct(APPROVED_COLLATERAL_COVER)} of the loan (a reference, not a fixed rule).`,
           `- To reach that: ${f.equityGap ? `about ${eur(f.equityGap)} more equity` : 'equity already at or above it'}; ${f.collateralGap ? `about ${eur(f.collateralGap)} more collateral value (or a loan smaller by about ${eur(f.collateralGap / APPROVED_COLLATERAL_COVER)})` : 'collateral already at or above it'}`,
         ]
       : []),

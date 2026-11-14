@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  /* Pankki: midnight ink, one vivid cobalt, flat white cards on a cool grey page. */
+  /* S-Pankki: midnight ink, one vivid cobalt, flat white cards on a cool grey page. */
   --color-ink: #0c1030;
   --color-accent: #2b3fff;
   --color-line: #e2e4ec;
@@ -46,22 +46,6 @@
   }
 }
 
-/* A slow heartbeat on the "Protected" status: alive, not alarming. */
-.seal-pulse {
-  animation: seal-pulse 3.2s ease-out infinite;
-}
-@keyframes seal-pulse {
-  0%,
-  45% {
-    transform: scale(1);
-    opacity: 0.5;
-  }
-  100% {
-    transform: scale(2.6);
-    opacity: 0;
-  }
-}
-
 /* An outline that draws itself (the path has pathLength 1). */
 .draw-line {
   stroke-dasharray: 1;
@@ -99,6 +83,77 @@
     transform: scaleY(1);
   }
 }
+/* Walter idle: a gentle bob, a blink now and then, a glance around, twinkling sparkles. */
+.walter-bob,
+.walter-blink,
+.walter-look,
+.walter-sparkle,
+.walter-brows,
+.walter-stache,
+.walter-tie {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.walter-curl {
+  transform-box: fill-box;
+}
+.walter-bob {
+  animation: walter-bob 3.2s ease-in-out infinite;
+}
+@keyframes walter-bob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-0.6px) rotate(-1.5deg); }
+}
+.walter-blink {
+  animation: walter-blink 4.6s infinite;
+}
+@keyframes walter-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+.walter-look {
+  animation: walter-look 7s ease-in-out infinite;
+}
+@keyframes walter-look {
+  0%, 30%, 100% { transform: translateX(0); }
+  38%, 52% { transform: translateX(1.1px); }
+  60%, 74% { transform: translate(-1.1px, -0.3px); }
+}
+.walter-curl {
+  transform-origin: bottom left;
+  animation: walter-curl 3.2s ease-in-out infinite;
+}
+@keyframes walter-curl {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(8deg); }
+}
+.walter-sparkle {
+  animation: walter-sparkle 2.4s ease-in-out infinite;
+}
+.walter-sparkle-2 { animation-delay: 0.8s; }
+.walter-sparkle-3 { animation-delay: 1.6s; }
+@keyframes walter-sparkle {
+  0%, 100% { transform: scale(0.5) rotate(0deg); opacity: 0.4; }
+  50% { transform: scale(1.15) rotate(45deg); opacity: 1; }
+}
+/* Walter talking: eyebrows bounce, moustache wiggles, bow tie twitches. */
+.walter-brows {
+  animation: walter-brows 0.64s ease-in-out infinite alternate;
+}
+@keyframes walter-brows {
+  from { transform: translateY(0); }
+  to { transform: translateY(-1.2px); }
+}
+.walter-stache {
+  animation: walter-stache 0.32s ease-in-out infinite alternate;
+}
+@keyframes walter-stache {
+  from { transform: rotate(-3deg) translateY(0); }
+  to { transform: rotate(3deg) translateY(0.4px); }
+}
+.walter-tie {
+  animation: walter-stache 0.5s ease-in-out infinite alternate;
+}
 
 /* The apple in a future (src/FutureCall.tsx) ripens or bruises as the year changes. */
 .apple-morph * {
@@ -111,9 +166,16 @@
   }
   .animate-fade-up,
   .flow-line,
-  .seal-pulse,
   .walter-talking,
-  .walter-mouth {
+  .walter-mouth,
+  .walter-bob,
+  .walter-blink,
+  .walter-look,
+  .walter-curl,
+  .walter-sparkle,
+  .walter-brows,
+  .walter-stache,
+  .walter-tie {
     animation: none;
   }
   .draw-line {

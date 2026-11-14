@@ -11,6 +11,7 @@ import { BENCHMARK_SOURCE, gapWords, type Benchmark } from './benchmarks'
 import { habitLines, makeHabits } from './habits'
 import { kindOf, suggestions } from './mcc'
 import { mortgageFacts, mortgageLines } from './mortgage'
+import { safeLines, safeToSpend } from './safe'
 import type { Wellness } from './wellness'
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string }
@@ -99,6 +100,8 @@ export function buildContext(d: {
       basket('3. "Fun extras", the spending that slips through your fingers (eating out, fun, shopping, travel, taxis, convenience stores)', b.baskets.everyday),
       `  Bought most often: ${leaks(b).map(line).join(', ')}. Spending ${pct(TRIM)} less on fun extras would free ${eur(b.baskets.everyday.monthly * TRIM)} a month, ${eur(b.baskets.everyday.monthly * TRIM * 12)} a year.`,
     )
+    const safe = d.allTxs?.length ? safeToSpend(d.allTxs, b) : null
+    if (safe) out.push('', ...safeLines(safe))
   }
 
   if (d.spendingClasses && d.allTxs?.length) {

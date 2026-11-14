@@ -26,7 +26,7 @@ import { ChatDialog } from './ChatDialog'
 import { WellnessApple } from './WellnessApple'
 import { buildContext, ledgerOf, type ChatMessage } from './assistant'
 import { AnalysisSteps, useStagedProgress } from './Analysis'
-import { CipherText, ProtectedBadge, SecureLoading, SecureNote, ShieldSeal, clearSession, linkEncrypted, markSessionStart } from './Security'
+import { CipherText, SecureLoading, SecureNote, ShieldSeal, clearSession, linkEncrypted, markSessionStart } from './Security'
 import { APPROVED_COLLATERAL_COVER, APPROVED_EQUITY_SHARE, getMortgageSteps, mortgageFacts, type MortgageFacts, type MortgageStep } from './mortgage'
 import { financialProfileTagline } from './profile'
 import { InsightCard } from './InsightCard'
@@ -165,7 +165,7 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
   return (
     <main className="flex min-h-dvh items-center justify-center px-4">
       <form onSubmit={submit} className="w-full max-w-xs">
-        <h1 className="mb-8 text-5xl font-extrabold tracking-tight">Pankki</h1>
+        <h1 className="mb-8 text-5xl font-extrabold tracking-tight">S-Pankki</h1>
         {loggedOut && (
           <p role="status" className="mb-5 rounded-md border border-credit/30 bg-credit/5 px-3 py-2 text-sm text-credit">
             You are logged out. Your session was cleared from this tab.
@@ -222,7 +222,7 @@ function Login({ onLogin, loggedOut }: { onLogin: (id: string) => void; loggedOu
         <div className="mt-6 border-t border-line pt-4">
           <SecureNote>
             {linkEncrypted()
-              ? 'Your connection to Pankki is encrypted. What you type here cannot be read on the way.'
+              ? 'Your connection to S-Pankki is encrypted. What you type here cannot be read on the way.'
               : 'Local development build. On the live site this connection is encrypted.'}
           </SecureNote>
         </div>
@@ -395,9 +395,8 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   return (
     <div className="mx-auto min-h-dvh max-w-2xl px-4 pb-28" data-mode={status.mode} style={{ '--color-accent': status.accent } as CSSProperties}>
       <header className="flex items-center justify-between py-5">
-        <span className="font-display text-2xl font-extrabold tracking-tight">Pankki</span>
+        <span className="font-display text-2xl font-extrabold tracking-tight">S-Pankki</span>
         <div className="flex items-center gap-3 text-sm sm:gap-4">
-          <ProtectedBadge />
           <span className="text-muted">{customerId}</span>
           <button onClick={onLogout} className="underline underline-offset-4">
             Log out
@@ -577,15 +576,20 @@ function Card({ children }: { children: ReactNode }) {
 
 const SCORE_DESCRIPTIONS = [
   'Your cash flow and buffer may need attention.',
-  'A few adjustments could help strengthen your finances.',
+  null,
   'Your finances show some stability, with room to grow.',
   'You are building a solid financial foundation.',
   'Your finances look strong across these indicators.',
 ] as const
 
-function scoreDescription(score: number): string {
+function scoreDescription(score: number): string | null {
   if (score === 100) return 'Excellent balance: every score indicator is at its maximum.'
   return SCORE_DESCRIPTIONS[Math.min(4, Math.max(0, Math.floor(score / 20)))]
+}
+
+function scoreSummary(score: number): string {
+  const description = scoreDescription(score)
+  return description ? `${financialProfileTagline(score)} ${description}` : financialProfileTagline(score)
 }
 
 function Overview({
@@ -674,7 +678,7 @@ function Overview({
                 {displayScore.provisional
                   ? 'Preliminary · account activity only.'
                   : score !== null
-                    ? `${financialProfileTagline(score)} ${scoreDescription(score)}`
+                    ? scoreSummary(score)
                     : wellnessError
                       ? 'Profile unavailable'
                       : wellnessLoading
@@ -781,6 +785,7 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
   const displayScore = w ? visibleWellnessScore(w, answers) : { value: null, provisional: false }
   const score = displayScore.value
   const stage = score === null ? null : Math.min(4, Math.floor(score / 20))
+  const scoreMessage = error ? 'Could not load your account data.' : loading ? 'Calculating…' : score === null ? 'Not enough account activity yet.' : displayScore.provisional ? 'A first look from your account activity.' : scoreDescription(score)
   const levels = [
     { name: 'Rotten', range: '0–19' },
     { name: 'Healing', range: '20–39' },
@@ -847,9 +852,7 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
             <p className="mt-2 font-display text-6xl font-extrabold tracking-tight" aria-label={score === null ? 'Score unavailable' : `${score} out of 100${displayScore.provisional ? ', preliminary' : ''}`}>
               {score ?? '—'} <span aria-hidden="true" className="text-xl font-medium text-muted">/ 100</span>
             </p>
-            <p className="mt-3 text-sm font-medium text-muted">
-              {error ? 'Could not load your account data.' : loading ? 'Calculating…' : score === null ? 'Not enough account activity yet.' : displayScore.provisional ? 'A first look from your account activity.' : scoreDescription(score)}
-            </p>
+            {scoreMessage && <p className="mt-3 text-sm font-medium text-muted">{scoreMessage}</p>}
             <div className="mt-5 flex flex-wrap items-center gap-2">
               <button type="button" onClick={onShowWellness} className="rounded-full bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
                 {displayScore.provisional ? 'Complete your assessment' : 'See how it is built'}
@@ -1219,10 +1222,10 @@ function NextSteps({ facts: f, steps, step, error, loadError, onRetry }: {
 
         {f?.rejected && (
           <p className="mt-3 text-xs text-muted">
-            Gaps are measured against typical approved applications ({percent(APPROVED_EQUITY_SHARE)} equity, collateral worth {percent(APPROVED_COLLATERAL_COVER)} of the loan), not a fixed bank rule. Suggestions are AI-generated; talk to a Pankki advisor before deciding.
+            Gaps are measured against typical approved applications ({percent(APPROVED_EQUITY_SHARE)} equity, collateral worth {percent(APPROVED_COLLATERAL_COVER)} of the loan), not a fixed bank rule. Suggestions are AI-generated; talk to an S-Pankki advisor before deciding.
           </p>
         )}
-        {f && !f.rejected && <p className="mt-3 text-xs text-muted">Suggestions are AI-generated; talk to a Pankki advisor before deciding.</p>}
+        {f && !f.rejected && <p className="mt-3 text-xs text-muted">Suggestions are AI-generated; talk to an S-Pankki advisor before deciding.</p>}
       </div>
     </Card>
   )

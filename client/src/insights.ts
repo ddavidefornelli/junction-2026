@@ -42,6 +42,8 @@ const EXAMPLE_RETURN = 0.04 // a year; an example, not a forecast
 const BALANCE_DAYS = 180
 const SET_ASIDE = new Set(['Invest Deposit', 'Salary Sweep', 'Invest Withdraw'])
 const DAY_MS = 86_400_000
+// Benchmark categories that are fun extras, not needs: the only ones worth a goal to spend less.
+export const OPTIONAL = new Set(['Restaurants', 'Travel', 'Entertainment', 'Lifestyle'])
 
 const wholeEur = new Intl.NumberFormat('fi-FI', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 const eur = (n: number) => wholeEur.format(Math.round(n))
@@ -68,6 +70,57 @@ export function dailyBalance(all: Transaction[]): { days: string[]; values: numb
     values.push([...accounts.values()].reduce((a, n) => a + n, 0))
   }
   return { days, values }
+}
+
+export const PLAN_MONTHS = 12 // a buffer plan aims to fill the gap within a year
+const MIN_PLAN = 25 // € a month; less is not worth a plan
+const nice = (n: number) => (n < 100 ? Math.round(n / 5) * 5 : Math.round(n / 10) * 10)
+
+export type BufferPlan = {
+  monthly: number // € to move aside each payday
+  months: number // until the buffer is full
+  parts: { from: 'left' | 'invest' | 'fun'; amount: number }[]
+}
+
+// How to fill a buffer gap within about a year, from the money that can really
+// go there, in this order: what is left after spending, the money now moved to
+// investments each month (a buffer comes before investing), then a fifth of the
+// fun extras. Null when there is no gap, or not even MIN_PLAN a month to find.
+export function bufferPlan(d: { gap: number; spare: number; invested: number; fun: number }): BufferPlan | null {
+  if (d.gap <= 0) return null
+  let need = d.gap / PLAN_MONTHS
+  const parts: BufferPlan['parts'] = []
+  for (const [from, have] of [['left', d.spare], ['invest', d.invested], ['fun', d.fun * TRIM]] as const) {
+    // All that is left over goes in, even beyond the year's need: a faster buffer is better.
+    const take = from === 'left' ? Math.max(0, have) : Math.min(Math.max(0, have), need)
+    if (take < 5) continue
+    parts.push({ from, amount: take })
+    need = Math.max(0, need - take)
+  }
+  // Each part rounded the way it is said, and the total is their sum, so the sentence adds up.
+  const rounded = parts.map((p) => ({ ...p, amount: nice(p.amount) })).filter((p) => p.amount > 0)
+  const monthly = rounded.reduce((a, p) => a + p.amount, 0)
+  if (monthly < MIN_PLAN) return null
+  return { monthly, months: Math.ceil(d.gap / monthly), parts: rounded }
+}
+
+// The money moved to savings and investments each month, on average over the baskets' months.
+export function monthlySetAside(all: Transaction[], b: Baskets): number {
+  const months = new Set(b.months)
+  let moved = 0
+  for (const tx of all) if (months.has(tx.tx_date.slice(0, 7)) && SET_ASIDE.has(tx.category ?? '')) moved -= Number(tx.tx_amount_eur)
+  return Math.max(0, moved / (b.months.length || 1))
+}
+
+// The buffer plan for a customer, as the overview shows it (see makeInsights and status.ts).
+export function bufferPlanFor(all: Transaction[], b: Baskets, balance: number): BufferPlan | null {
+  const invested = monthlySetAside(all, b)
+  return bufferPlan({
+    gap: BUFFER_MONTHS * b.spending - balance,
+    spare: b.income - b.spending - invested,
+    invested,
+    fun: b.baskets.everyday.monthly,
+  })
 }
 
 // `all` is every transaction, oldest first. Empty until there is a full month to measure.
@@ -150,7 +203,7 @@ export function makeInsights(d: {
       ].filter(Boolean).join(' ').trim() + '.',
       ask: `I have ${lump ? `${eur(lump)} above my buffer` : 'a full buffer'}${monthly ? ` and about ${eur(monthly)} left each month` : ''}. How should I start investing it?`,
       chart: { kind: 'growth', kept: keptLine, invested },
-      note: `Example at ${EXAMPLE_RETURN * 100}% a year over ${EXAMPLE_YEARS} years, not a forecast or investment advice: funds can lose value. Talk to a Pankki advisor before deciding.`,
+      note: `Example at ${EXAMPLE_RETURN * 100}% a year over ${EXAMPLE_YEARS} years, not a forecast or investment advice: funds can lose value. Talk to an S-Pankki advisor before deciding.`,
     })
   }
 
@@ -226,8 +279,9 @@ export function makeInsights(d: {
     })
   }
 
-  // The category furthest above what people of the same age spend.
-  const line = benchmark?.lines.find((l) => l.ratio >= 1.25 && l.you - l.typical >= 10)
+  // The optional category furthest above what people of the same age spend.
+  // Needs (groceries, getting around, health, home) are never a goal to cut.
+  const line = benchmark?.lines.find((l) => OPTIONAL.has(l.category) && l.ratio >= 1.25 && l.you - l.typical >= 10)
   if (benchmark && line) {
     const who = benchmark.group === 'all' ? 'people in Finland' : `Finns aged ${benchmark.group}`
     const half = (line.you + line.typical) / 2
@@ -258,8 +312,14 @@ export function makeInsights(d: {
   const below = recent.filter((v) => v < 0).length
   const full = gap <= 0 && below === 0
   {
-    const pace = kept > 0 ? (spare > 0 ? spare : kept) : 0
-    const wait = pace > 0 && gap > 0 ? Math.ceil(gap / pace) : 0
+    const plan = bufferPlan({ gap, spare, invested: setAside, fun: everyday.monthly })
+    const said = (p: BufferPlan['parts'][number]) =>
+      p.from === 'left'
+        ? `the ${eur(p.amount)} you have left each month`
+        : p.from === 'invest'
+          ? `${eur(p.amount)} of what you now move to investments`
+          : `${eur(p.amount)} less on fun extras`
+    const list = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`)
     out.push({
       id: 'buffer',
       topic: 'buffer',
@@ -268,7 +328,7 @@ export function makeInsights(d: {
         : below > 0
         ? `Below zero on ${below} of the last ${recent.length} days`
         : `Your buffer covers ${(Math.max(0, balance) / b.spending).toLocaleString('fi-FI', { maximumFractionDigits: 1 })} of ${BUFFER_MONTHS} months`,
-      value: Math.min(Math.max(0, gap), pace * 12),
+      value: Math.min(Math.max(0, gap), (plan?.monthly ?? 0) * 12),
       figure: full
         ? `${(balance / b.spending).toLocaleString('fi-FI', { maximumFractionDigits: 1 })} months of spending`
         : gap > 0 ? `${eur(gap)} to go` : `${eur(balance)} now`,
@@ -276,8 +336,8 @@ export function makeInsights(d: {
       text: `You have ${eur(balance)}. Three months of spending is ${eur(target)}.`,
       action: full
         ? `Keep at least ${eur(target)} here. Check the amount again when your rent or bills change.`
-        : pace > 0
-        ? `Move ${eur(pace)} aside the day your salary arrives.${wait > 0 && wait <= 36 ? ` Your buffer is full in about ${wait} month${wait === 1 ? '' : 's'}.` : ''}`
+        : plan
+        ? `Move ${eur(plan.monthly)} aside the day your salary arrives${plan.parts.length > 1 || plan.parts[0].from !== 'left' ? `: ${list(plan.parts.map(said))}` : ''}. Your buffer is full in about ${plan.months} month${plan.months === 1 ? '' : 's'}.${plan.parts.some((p) => p.from === 'invest') ? ' Cash for bad days comes before investing.' : ''}`
         : 'Once you spend less than you get, put the difference here first.',
       ask: 'How do I build a buffer of three months of spending, and how long will it take?',
       chart: {
