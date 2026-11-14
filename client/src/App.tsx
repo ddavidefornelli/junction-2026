@@ -12,7 +12,7 @@ import {
   type Verdict,
 } from './api'
 import { date, eur, label, percent, signedEur } from './format'
-import { calculateWellness, emptyAnswers, wellnessScores, type Wellness, type WellnessAnswers } from './wellness'
+import { calculateWellness, emptyAnswers, visibleWellnessScore, wellnessScores, type Wellness, type WellnessAnswers } from './wellness'
 import { GoalForm } from './GoalForm'
 import { deadline, goalLabel, goalStatement, loadGoalProfile, monthYear, saveGoalProfile, type GoalProfile } from './goal'
 import { makePlan, txId, type Plan } from './plan'
@@ -20,6 +20,7 @@ import { kindOf, suggestions, type Suggestion } from './mcc'
 import { Chat } from './Chat'
 import { WalterAvatar } from './WalterAvatar'
 import { ChatDialog } from './ChatDialog'
+import { WellnessApple } from './WellnessApple'
 import { buildContext, type ChatMessage } from './assistant'
 
 const SESSION_KEY = 'customerId'
@@ -178,7 +179,7 @@ function Bank({ customerId, onLogout }: { customerId: string; onLogout: () => vo
   const chatContext = useMemo(
     () =>
       allTxs || wellnessError
-        ? buildContext({ balance: txs?.[0]?.balance_after_eur ?? null, wellness, score: wellness ? wellnessScores(wellness, answers).total : null, allTxs, goal, plan, mortgage })
+        ? buildContext({ balance: txs?.[0]?.balance_after_eur ?? null, wellness, score: wellness ? visibleWellnessScore(wellness, answers) : { value: null, provisional: false }, allTxs, goal, plan, mortgage })
         : null,
     [txs, wellness, answers, wellnessError, allTxs, goal, plan, mortgage],
   )
@@ -405,7 +406,8 @@ function Overview({
   const [chatOpen, setChatOpen] = useState(false)
   const latest = txs[0]
   if (!latest) return <p className="text-sm text-muted">No account activity.</p>
-  const score = wellness ? wellnessScores(wellness, answers).total : null
+  const displayScore = wellness ? visibleWellnessScore(wellness, answers) : { value: null, provisional: false }
+  const score = displayScore.value
 
   return (
     <div className="space-y-6">
@@ -421,17 +423,20 @@ function Overview({
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <div className="flex h-full min-h-40 flex-col justify-between p-5">
-            <div>
-              <h2 className="font-medium">Financial score</h2>
-              <p className="mt-3 text-3xl font-semibold">
-                {score === null ? '—' : `${score} / 100`}
-              </p>
-              <p className="mt-2 text-sm text-muted">
-                {score !== null ? scoreDescription(score) : wellnessError ? 'Score unavailable' : wellnessLoading ? 'Calculating…' : 'Complete the questionnaire to see your score.'}
-              </p>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h2 className="font-medium">Financial score</h2>
+                <p className="mt-3 text-3xl font-semibold text-emerald-900">
+                  {score === null ? '—' : `${score} / 100`}
+                </p>
+              </div>
+              <WellnessApple stage={score === null ? null : Math.min(4, Math.floor(score / 20))} className="size-20 shrink-0" />
             </div>
-            <button onClick={onShowWellness} className="mt-4 self-start text-sm font-medium underline underline-offset-4">
-              Details <span aria-hidden="true">↗</span>
+            <p className="mt-2 text-sm text-muted">
+              {displayScore.provisional ? 'Preliminary · account activity only.' : score !== null ? scoreDescription(score) : wellnessError ? 'Score unavailable' : wellnessLoading ? 'Calculating…' : 'Not enough account activity to calculate a score.'}
+            </p>
+            <button onClick={onShowWellness} className="mt-4 self-start text-sm font-medium text-emerald-800 underline underline-offset-4">
+              See details <span aria-hidden="true">↗</span>
             </button>
           </div>
         </Card>
@@ -595,117 +600,156 @@ function ScoreDetails({ wellness: w, answers, loading, error, onBack, onShowWell
   onBack: () => void
   onShowWellness: () => void
 }) {
-  const score = w ? wellnessScores(w, answers).total : null
+  const [openDetails, setOpenDetails] = useState<string | null>(null)
+  const [activeTip, setActiveTip] = useState(0)
+  const tipsList = useRef<HTMLUListElement>(null)
+  const displayScore = w ? visibleWellnessScore(w, answers) : { value: null, provisional: false }
+  const score = displayScore.value
+  const stage = score === null ? null : Math.min(4, Math.floor(score / 20))
   const levels = [
-    { range: '0–19', name: 'Needs attention', caption: 'Start with the basics.' },
-    { range: '20–39', name: 'Building resilience', caption: 'Small changes can add up.' },
-    { range: '40–59', name: 'Finding balance', caption: 'Some stability, room to grow.' },
-    { range: '60–79', name: 'On solid ground', caption: 'Keep up the momentum.' },
-    { range: '80–100', name: 'Thriving', caption: 'Strong across these indicators.' },
+    { name: 'Rotten', range: '0–19' },
+    { name: 'Healing', range: '20–39' },
+    { name: 'Growing', range: '40–59' },
+    { name: 'Healthy', range: '60–79' },
+    { name: 'Fresh', range: '80–100' },
   ]
-  const activeLevel = score === null ? -1 : Math.min(4, Math.floor(score / 20))
   const tips = [
-    ...(w && w.negativeDays > 0 ? [{ title: 'Prepare for unexpected costs', preview: 'An emergency cushion may help you avoid days in overdraft.' }] : []),
-    ...(w && w.savingsRate !== null && w.savingsRate < 0.2 ? [{ title: 'Make saving a habit', preview: 'Consider putting aside a regular share of your income.' }] : []),
-    ...(w && w.outgoing > 0 && w.averageBalance < w.outgoing / w.days * 90 ? [{ title: 'Strengthen your cash buffer', preview: 'Build a reserve for essential expenses and surprises.' }] : []),
-    ...(score === null ? [{ title: 'Complete your picture', preview: 'Finish the questionnaire to see every dimension of your score.' }] : []),
-    { title: 'Check your spending', preview: 'Review your outgoings regularly to spot opportunities.' },
-    { title: 'Plan your next milestone', preview: 'Think ahead about upcoming costs and longer-term goals.' },
-  ]
+    ...(w && w.negativeDays > 0 ? [{ title: 'Build a safety cushion', summary: 'Be ready for unexpected costs.', detail: 'Putting a little aside regularly can help you cover surprises without dipping into an overdraft.' }] : []),
+    ...(w && w.savingsRate !== null && w.savingsRate < 0.2 ? [{ title: 'Save a little each month', summary: 'Small amounts can add up.', detail: 'Choose an amount you can afford and set it aside after each payday. Review it as your income or expenses change.' }] : []),
+    ...(w && w.outgoing > 0 && w.averageBalance < w.outgoing / w.days * 90 ? [{ title: 'Grow your cash buffer', summary: 'Give your budget more breathing room.', detail: 'A cash buffer can help with essential expenses and surprises. Start with a target that works for you.' }] : []),
+    ...(displayScore.provisional ? [{ title: 'Complete your picture', summary: 'See more than your account activity.', detail: 'Answer the questionnaire to add perception, knowledge and habits to your score. The full score also needs two complete months of transactions.' }] : []),
+    { title: 'Review your spending', summary: 'Spot patterns in where your money goes.', detail: 'Look through recent outgoings and see if any recurring costs could be reduced.' },
+    { title: 'Choose a small goal', summary: 'Make your next milestone feel achievable.', detail: 'Pick a specific target and a realistic monthly amount, then track your progress over time.' },
+    { title: 'Check in regularly', summary: 'Keep your plan in step with your life.', detail: 'Revisit your spending and savings as your circumstances change. These are general ideas, not financial advice.' },
+  ].slice(0, 5)
+  const showTip = (index: number) => {
+    const next = Math.max(0, Math.min(tips.length - 1, index))
+    tipsList.current?.scrollTo({ left: next * tipsList.current.clientWidth, behavior: 'smooth' })
+    setActiveTip(next)
+    setOpenDetails(null)
+  }
   const factors = [
-    {
-      number: '01', title: 'Your spending', measure: w ? eur(w.outgoing / w.days * 30) : '—', unit: 'Estimated monthly outflow',
-      detail: 'Account withdrawals and payments show how much goes out. Monthly outflow is used to compare your cash buffer with three months of spending (up to 15 score points).',
-    },
-    {
-      number: '02', title: 'Your ability to save', measure: w ? percent(w.savingsRate) : '—', unit: 'Net cash flow / money in',
-      detail: 'Inflows minus outflows, divided by inflows, estimates your savings rate (up to 15 points). Your average balance also contributes to the cash-buffer measure (up to 15 points).',
-    },
-    {
-      number: '03', title: 'Planning for your future', measure: w && w.observedMonths >= 2 ? `${w.savingMonths} / ${w.observedMonths}` : '—', unit: 'Full months with positive net flow',
-      detail: 'Repeated positive monthly cash flow can signal room to prepare for future needs (up to 10 points for consistency). It does not prove you have a financial plan: the separate planning question contributes up to 5 points.',
-    },
+    { title: 'Spending', measure: w ? eur(w.outgoing / w.days * 30) : '—', unit: 'per month, estimated', detail: 'Your withdrawals and payments are averaged over the observed days. This helps compare your cash buffer against three months of spending.' },
+    { title: 'Saving', measure: w ? percent(w.savingsRate) : '—', unit: 'savings rate', detail: 'Money in minus money out, divided by money in. The full score also considers your average account balance.' },
+    { title: 'Planning', measure: w && w.observedMonths >= 2 ? `${w.savingMonths} / ${w.observedMonths}` : '—', unit: 'months with positive cash flow', detail: 'Only complete calendar months count. Positive cash flow does not prove you have a financial plan; your answer to the planning question is assessed separately.' },
   ]
+  const toggleDetails = (id: string) => setOpenDetails((current) => current === id ? null : id)
+  const seeDetails = (id: string, subject: string) => (
+    <button type="button" onClick={() => toggleDetails(id)} aria-expanded={openDetails === id} aria-controls={openDetails === id ? `score-${id}` : undefined}
+      aria-label={`${openDetails === id ? 'Hide details' : 'See details'} about ${subject}`}
+      className="rounded-full border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
+      {openDetails === id ? 'Hide details' : 'See details'} <span aria-hidden="true">{openDetails === id ? '↑' : '↓'}</span>
+    </button>
+  )
 
   return (
-    <div className="space-y-8 pb-8">
-      <button onClick={onBack} className="text-sm font-medium text-muted hover:text-ink">← Back to overview</button>
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-ink via-[#123c57] to-[#147b79] p-6 text-white shadow-xl sm:p-9">
-        <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-24 h-80 w-80 rounded-full border-[45px] border-white/5" />
-        <div aria-hidden="true" className="pointer-events-none absolute -bottom-36 right-20 h-72 w-72 rounded-full border-[35px] border-white/5" />
-        <div className="relative grid items-center gap-8 sm:grid-cols-[1fr_auto]">
+    <div className="space-y-6 rounded-3xl bg-[#f3faf3] p-4 pb-8 text-emerald-950 sm:p-6">
+      <button onClick={onBack} className="text-sm font-medium text-emerald-800 underline-offset-4 hover:underline">← Back to overview</button>
+      <header>
+        <h1 className="text-3xl font-bold tracking-tight">Financial score</h1>
+        <p className="mt-1 text-sm text-emerald-800">Your financial well-being at a glance.</p>
+      </header>
+      <section aria-label="Your financial score" className="rounded-3xl border border-emerald-100 bg-white p-5 shadow-sm sm:p-7">
+        <div className="grid items-center gap-4 sm:grid-cols-[1fr_200px]">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-teal-200">Your financial picture</p>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">Financial well-being,<br />made clearer.</h1>
-            <p className="mt-4 max-w-sm text-sm leading-relaxed text-white/75">
-              {error ? 'Your account data could not be loaded.' : loading ? 'Analyzing your account activity…' : score === null ? 'Your score is waiting for complete account data and questionnaire answers.' : scoreDescription(score)}
+            <p className="text-sm font-semibold text-emerald-700">Your score {displayScore.provisional && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-1 text-xs">Preliminary</span>}</p>
+            <p className="mt-2 text-6xl font-bold tracking-tight text-emerald-900" aria-label={score === null ? 'Score unavailable' : `${score} out of 100${displayScore.provisional ? ', preliminary' : ''}`}>
+              {score ?? '—'} <span aria-hidden="true" className="text-xl font-medium text-emerald-700">/ 100</span>
             </p>
-            <button onClick={onShowWellness} className="mt-6 inline-flex rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-ink transition hover:bg-teal-100">
-              View data &amp; questionnaire <span aria-hidden="true" className="ml-2">↗</span>
-            </button>
-          </div>
-          <div className="flex justify-center">
-            <div className="grid size-48 place-items-center rounded-full p-3 shadow-2xl sm:size-52" style={{ background: `conic-gradient(#5eead4 ${score ?? 0}%, #ffffff30 0)` }}>
-              <div className="flex size-full flex-col items-center justify-center rounded-full bg-[#123c57]">
-                <span className="text-6xl font-semibold tracking-tighter">{score ?? '—'}</span>
-                <span className="text-xs font-medium uppercase tracking-[0.2em] text-teal-200">out of 100</span>
-              </div>
+            <p className="mt-3 text-sm font-medium text-emerald-800">
+              {error ? 'Could not load your account data.' : loading ? 'Calculating…' : score === null ? 'Not enough account activity yet.' : displayScore.provisional ? 'A first look from your account activity.' : scoreDescription(score)}
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <button type="button" onClick={onShowWellness} className="rounded-full bg-emerald-800 px-5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
+                {displayScore.provisional ? 'Complete your assessment' : 'View your answers'} ↗
+              </button>
+              {seeDetails('score', 'the score')}
             </div>
           </div>
+          <div className="mx-auto grid size-44 place-items-center rounded-full bg-emerald-50 sm:size-48">
+            <WellnessApple stage={stage} className="size-40 sm:size-44" />
+          </div>
         </div>
-        <p className="relative mt-8 border-t border-white/20 pt-4 text-xs leading-relaxed text-white/70">Illustrative score, not an official bank index, credit assessment, or prediction.</p>
+        {openDetails === 'score' && (
+          <div id="score-score" className="mt-5 rounded-2xl bg-emerald-50 p-4 text-sm leading-relaxed text-emerald-900">
+            {displayScore.provisional ? 'This preliminary number uses account activity only (resilience scaled to 100). Complete your answers and two full months of transactions for the four-part score.' : 'The full score combines resilience (35), perception (25), knowledge (20) and behaviors (20).'}{' '}
+            This is an illustrative estimate, not a bank index or credit score.
+          </div>
+        )}
       </section>
 
-      <section aria-labelledby="levels-title">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-credit">01 / Understand your score</p>
-        <h2 id="levels-title" className="mt-2 text-2xl font-semibold tracking-tight">Levels of financial well-being</h2>
-        <p className="mt-2 text-sm text-muted">Indicative ranges. {score === null ? 'Finish your assessment to see your level.' : 'Your current level is highlighted below.'}</p>
-        <ol className="mt-5 grid gap-2 sm:grid-cols-5">
+      <section aria-labelledby="levels-title" className="rounded-3xl border border-emerald-100 bg-white p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="levels-title" className="text-xl font-bold">From recovery to thriving</h2>
+          {seeDetails('levels', 'the apple stages')}
+        </div>
+        <ol className="mt-5 grid grid-cols-5 gap-1 sm:gap-3">
           {levels.map((level, index) => (
-            <li key={level.range} className={`rounded-2xl border p-4 ${index === activeLevel ? 'border-ink bg-ink text-white shadow-lg' : 'border-line bg-white'}`}>
-              <span className={`text-xs font-semibold tracking-widest ${index === activeLevel ? 'text-teal-200' : 'text-credit'}`}>{level.range}</span>
-              <h3 className="mt-3 text-sm font-semibold">{level.name}</h3>
-              <p className={`mt-1 text-xs leading-relaxed ${index === activeLevel ? 'text-white/70' : 'text-muted'}`}>{level.caption}</p>
-              {index === activeLevel && <span className="mt-3 inline-block rounded-full bg-teal-300/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-teal-100">Your level</span>}
+            <li key={level.range} className={`min-w-0 rounded-2xl p-1 text-center sm:p-2 ${stage === index ? 'bg-emerald-100 ring-2 ring-emerald-700' : 'bg-emerald-50'}`}>
+              <WellnessApple stage={index} className="mx-auto w-full max-w-20" />
+              <p className="text-[10px] font-semibold leading-tight text-emerald-900 sm:text-sm">{level.name}</p>
+              <p className="text-[10px] text-emerald-700 sm:text-xs">{level.range}</p>
             </li>
           ))}
         </ol>
-        <p className="mt-3 text-xs text-muted">These thresholds are illustrative, not official bank classifications.</p>
+        {displayScore.provisional && <p className="mt-3 text-xs text-emerald-800">Apple stage is a preview; the full score may change it.</p>}
+        {openDetails === 'levels' && (
+          <p id="score-levels" className="mt-4 rounded-2xl bg-emerald-50 p-4 text-sm leading-relaxed text-emerald-900">
+            The apple gradually becomes healthier as the score rises. Ranges are illustrative, not official bank classifications. {displayScore.provisional ? 'The highlighted stage is only a preview based on account activity; your full score may differ.' : score === null ? 'Your stage will appear once there is enough account activity.' : `Your full score places you in the ${levels[stage!].name.toLowerCase()} stage.`}
+          </p>
+        )}
       </section>
 
       <section aria-labelledby="tips-title">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-credit">02 / Next steps</p>
-        <h2 id="tips-title" className="mt-2 text-2xl font-semibold tracking-tight">Financial suggestions</h2>
-        <p className="mt-2 text-sm text-muted">A few ideas to explore. Swipe or scroll to see more →</p>
-        <ul aria-label="Financial suggestions, scroll horizontally" tabIndex={0} className="mt-5 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-4 focus-visible:rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="tips-title" className="text-xl font-bold">Small steps, big difference</h2>
+          <div className="flex shrink-0 gap-2">
+            <button type="button" onClick={() => showTip(activeTip - 1)} disabled={activeTip === 0} aria-label="Previous suggestion"
+              className="grid size-9 place-items-center rounded-full border border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:opacity-40">←</button>
+            <button type="button" onClick={() => showTip(activeTip + 1)} disabled={activeTip === tips.length - 1} aria-label="Next suggestion"
+              className="grid size-9 place-items-center rounded-full border border-emerald-200 bg-white text-emerald-900 hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:opacity-40">→</button>
+          </div>
+        </div>
+        <ul ref={tipsList} aria-label="Financial suggestions; swipe or scroll to explore" tabIndex={0}
+          onScroll={(event) => {
+            const list = event.currentTarget
+            if (list.clientWidth) setActiveTip(Math.max(0, Math.min(tips.length - 1, Math.round(list.scrollLeft / list.clientWidth))))
+          }}
+          className="mt-3 flex snap-x snap-mandatory overflow-x-auto rounded-3xl scroll-smooth focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">
           {tips.map((tip, index) => (
-            <li key={tip.title} className="flex min-h-56 basis-[78%] shrink-0 snap-start flex-col rounded-2xl border border-line bg-white p-5 shadow-sm sm:basis-[46%]">
-              <span className="flex size-9 items-center justify-center rounded-xl bg-teal-50 text-sm font-bold text-credit">{String(index + 1).padStart(2, '0')}</span>
-              <h3 className="mt-4 text-lg font-semibold">{tip.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted">{tip.preview}</p>
-              <button type="button" disabled title="Details coming soon" className="mt-auto self-start pt-5 text-sm font-medium text-muted opacity-60" aria-label={`Details for ${tip.title} (coming soon)`}>Details ↗</button>
+            <li key={tip.title} className="w-full shrink-0 snap-start">
+              <article className="flex min-h-56 flex-col rounded-3xl border border-emerald-100 bg-white p-6 sm:min-h-52">
+                <span className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Step {index + 1} of {tips.length}</span>
+                <h3 className="mt-4 text-xl font-bold">{tip.title}</h3>
+                <p className="mt-2 text-sm text-emerald-800">{tip.summary}</p>
+                <div className="mt-auto pt-5">{seeDetails(`tip-${index}`, tip.title)}</div>
+                {openDetails === `tip-${index}` && <p id={`score-tip-${index}`} className="mt-4 border-t border-emerald-100 pt-4 text-sm leading-relaxed text-emerald-900">{tip.detail} General idea, not personalized financial advice.</p>}
+              </article>
             </li>
           ))}
         </ul>
-        <p className="mt-2 text-xs text-muted">Details are coming soon. General ideas, not personalized financial advice.</p>
+        <div className="mt-3 flex items-center justify-center gap-2" aria-label="Choose a suggestion">
+          {tips.map((tip, index) => (
+            <button key={tip.title} type="button" onClick={() => showTip(index)} aria-label={`Go to suggestion ${index + 1}: ${tip.title}`}
+              aria-current={activeTip === index ? 'step' : undefined}
+              className={`size-3 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 ${activeTip === index ? 'bg-emerald-800' : 'bg-emerald-200 hover:bg-emerald-500'}`} />
+          ))}
+        </div>
       </section>
 
       <section aria-labelledby="factors-title">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-credit">03 / Behind the number</p>
-        <h2 id="factors-title" className="mt-2 text-2xl font-semibold tracking-tight">What shapes your financial well-being?</h2>
-        <p className="mt-2 text-sm text-muted">Your account movements reveal spending patterns, saving capacity, and room to prepare for the future.</p>
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
-          {factors.map((factor) => (
-            <article key={factor.number} className="flex flex-col rounded-2xl border border-line bg-white p-5">
-              <span className="text-3xl font-light text-credit/50">{factor.number}</span>
-              <h3 className="mt-4 text-lg font-semibold">{factor.title}</h3>
-              <p className="mt-4 text-2xl font-semibold tracking-tight">{factor.measure}</p>
-              <p className="mt-1 text-xs text-muted">{factor.unit}</p>
-              <p className="mt-4 border-t border-line pt-4 text-sm leading-relaxed text-muted">{factor.detail}</p>
+        <h2 id="factors-title" className="text-xl font-bold">Your money, in three snapshots</h2>
+        <div className="mt-3 grid gap-4 sm:grid-cols-3">
+          {factors.map((factor, index) => (
+            <article key={factor.title} className="flex min-h-72 flex-col rounded-3xl border border-emerald-100 bg-white p-6 sm:min-h-[23rem]">
+              <span className="text-xs font-bold tracking-wide text-emerald-700">0{index + 1} / 03</span>
+              <h3 className="mt-5 text-lg font-semibold text-emerald-900">{factor.title}</h3>
+              <p className="mt-4 text-3xl font-bold text-emerald-950">{factor.measure}</p>
+              <p className="mt-1 text-xs text-emerald-700">{factor.unit}</p>
+              <p className="mt-auto border-t border-emerald-100 pt-5 text-sm leading-relaxed text-emerald-900">{factor.detail}</p>
             </article>
           ))}
         </div>
-        <p className="mt-4 text-xs leading-relaxed text-muted">Monthly outflow is estimated from the observed period; saving consistency uses only complete calendar months (at least two). Account activity alone cannot establish your intentions. The full score also considers overdraft days, your answers about budgeting and planning, perception (25 points), and financial knowledge (20 points). Missing data is never scored as zero.</p>
       </section>
     </div>
   )
@@ -718,6 +762,7 @@ function FinancialWellness({ data: w, answers, onAnswers }: {
 }) {
   const [openInfo, setOpenInfo] = useState<string | null>(null)
   const scores = wellnessScores(w, answers)
+  const displayScore = visibleWellnessScore(w, answers)
   const update = (key: keyof WellnessAnswers, value: number | boolean | null) =>
     onAnswers({ ...answers, [key]: value })
   const figures: [string, string, string][] = [
@@ -764,12 +809,13 @@ function FinancialWellness({ data: w, answers, onAnswers }: {
               Financial score {infoButton('impact', 'the financial score')}
             </p>
             <p className="mt-4 text-5xl font-semibold tracking-tight">
-              {scores.total ?? '—'} <span className="text-lg font-normal text-muted">/ 100</span>
+              {displayScore.value ?? '—'} <span className="text-lg font-normal text-muted">/ 100</span>
             </p>
+            {displayScore.provisional && <p className="mt-2 text-sm text-muted">Preliminary · based on account activity only. The full score also needs your answers and two complete months of transactions.</p>}
             {openInfo === 'impact' && (
               <p className="mt-3 text-sm text-muted">
-                Indicative score: resilience 35, perception 25, knowledge 20, behaviors 20.
-                No total is shown until every dimension can be measured. Not a credit score.
+                The preliminary score scales resilience (up to 35 points) to 100; it does not treat missing answers as zero.
+                The full score uses resilience 35, perception 25, knowledge 20 and behaviors 20, and needs two complete months of transactions. Not a credit score.
               </p>
             )}
           </div>
@@ -819,7 +865,7 @@ function FinancialWellness({ data: w, answers, onAnswers }: {
               </select>
             </label>
           ))}
-          <p className="text-xs text-muted">Resilience: savings rate (15), cash buffer (15), days without overdraft (5). Behaviors: months with positive net flow (10), budgeting (5), planning (5). At least two complete calendar months of transactions are needed for behaviors. Missing data means no total.</p>
+          <p className="text-xs text-muted">Resilience: savings rate (15), cash buffer (15), days without overdraft (5). Behaviors: months with positive net flow (10), budgeting (5), planning (5). At least two complete calendar months of transactions are needed for the full score. Until then, the preliminary score uses account activity only; missing data is never scored as zero.</p>
         </div>
       </Card>
       <Card>

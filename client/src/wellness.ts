@@ -71,6 +71,16 @@ export function wellnessScores(w: Wellness, a: WellnessAnswers): WellnessScores 
   }
 }
 
+// Show an account-activity-only preview while the questionnaire or full-month
+// history is incomplete. It is not the full four-dimension score: rescale only
+// the measured resilience (35 points) instead of treating missing answers as zero.
+export function visibleWellnessScore(w: Wellness, a: WellnessAnswers): { value: number | null; provisional: boolean } {
+  const { total, resilience } = wellnessScores(w, a)
+  if (total !== null) return { value: total, provisional: false }
+  if (resilience !== null) return { value: Math.round(resilience / 35 * 100), provisional: true }
+  return { value: null, provisional: false }
+}
+
 // A day uses the last recorded balance for each account. Carry it forward on days
 // without activity; do not assume an opening balance before an account first appears.
 export function calculateWellness(txs: Transaction[]): Wellness | null {
