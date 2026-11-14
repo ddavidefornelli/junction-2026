@@ -420,6 +420,27 @@ function Overview({
         </div>
       </Card>
 
+      <Card>
+        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm text-muted">Your goal for {year}</p>
+            <p className="mt-1 font-medium">
+              {goal ? goalStatement(goal) : 'Set a goal and Walter will build a monthly plan to get you there.'}
+            </p>
+          </div>
+          <button
+            onClick={() => setGoalFormOpen(true)}
+            className={
+              goal
+                ? 'shrink-0 self-start rounded-md border border-line px-4 py-2 text-sm font-medium hover:bg-paper sm:self-auto'
+                : 'shrink-0 rounded-md bg-ink px-4 py-2.5 text-sm font-medium text-white hover:bg-ink/90'
+            }
+          >
+            {goal ? 'Edit goal' : `Set your financial goal for ${year}`}
+          </button>
+        </div>
+      </Card>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <div className="flex h-full min-h-40 flex-col justify-between p-5">
@@ -450,21 +471,8 @@ function Overview({
               </div>
             </div>
             <div className="my-4 rounded-lg bg-paper p-3 text-sm">
-              {goal ? (
-                <>
-                  <span className="text-muted">Your goal for {year}</span>
-                  <span className="mt-0.5 block font-medium">{goalStatement(goal)}</span>
-                </>
-              ) : (
-                "Hi, I'm Walter. Ask me how your finances are doing, or what to do next."
-              )}
+              Hi, I'm Walter. Ask me how your finances are doing, or what to do next.
             </div>
-            <button
-              onClick={() => setGoalFormOpen(true)}
-              className={`mb-4 ${goal ? 'self-start text-sm underline underline-offset-4' : 'rounded-md bg-ink px-3 py-2 text-sm font-medium text-white'}`}
-            >
-              {goal ? 'Edit goal' : `Set your financial goal for ${year}`}
-            </button>
             <button
               onClick={() => setChatOpen(true)}
               className="mt-auto flex w-full items-center justify-center gap-2 rounded-md bg-ink px-3 py-2.5 text-sm font-medium text-white hover:bg-ink/90"
