@@ -6,16 +6,18 @@ import { ClassifyError, classifyPurchases, type LayaConfig } from './laya.ts'
 import { ChatError, chatReply, mortgageSteps, type ChatConfig } from './chat.ts'
 import { ScenarioError, whatIfScenarios } from './scenarios.ts'
 import { TtsError, speech, type TtsConfig } from './tts.ts'
+import { transcribe } from './stt.ts'
 
 const TABLES = ['customers', 'transactions', 'mortgage_applications']
 
 // API for the client:
 //   GET  /api/<table>?<postgrest query>   read-only Supabase access
 //   POST /api/classify {purchases}       essential / flexible / saving labels from Laya (laya.ts)
-//   POST /api/chat {context, messages, ledger}  the assistant's reply from OpenAI, streamed as plain text (chat.ts)
+//   POST /api/chat {context, messages, ledger, spoken}  the assistant's reply from OpenAI, streamed as plain text (chat.ts)
 //   POST /api/mortgage-steps {context}    AI-written next steps towards the mortgage, as JSON (chat.ts)
 //   POST /api/scenarios {context}         Walter's personalised what-if questions, as JSON (scenarios.ts)
 //   POST /api/tts {text}                  Walter's voice from ElevenLabs, as MP3 audio (tts.ts)
+//   POST /api/stt {audio, mimeType}       what the customer said, from ElevenLabs Scribe, as {text} (stt.ts)
 // The dev server calls Supabase, Laya, OpenAI and ElevenLabs itself with keys from server/.env
 // (or client/.env for Laya); the keys never reach the browser.
 function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig, tts: TtsConfig): Plugin {
@@ -24,7 +26,7 @@ function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig, t
     configureServer(server) {
       server.middlewares.use('/api', async (req, res) => {
         const { pathname, search } = new URL(req.url ?? '/', 'http://localhost')
-        if (req.method === 'POST' && (pathname === '/classify' || pathname === '/chat' || pathname === '/mortgage-steps' || pathname === '/scenarios' || pathname === '/tts')) {
+        if (req.method === 'POST' && (pathname === '/classify' || pathname === '/chat' || pathname === '/mortgage-steps' || pathname === '/scenarios' || pathname === '/tts' || pathname === '/stt')) {
           res.setHeader('Content-Type', 'application/json')
           try {
             let raw = ''
@@ -36,9 +38,10 @@ function bankApi(url: string, key: string, laya: LayaConfig, chat: ChatConfig, t
               res.setHeader('Content-Type', 'audio/mpeg')
               return res.end(audio)
             }
+            if (pathname === '/stt') return res.end(JSON.stringify(await transcribe(tts, body.audio, body.mimeType)))
             if (pathname === '/scenarios') return res.end(JSON.stringify(await whatIfScenarios(chat, body.context)))
             if (pathname === '/chat') {
-              const reply = await chatReply(chat, body.context, body.messages, body.ledger)
+              const reply = await chatReply(chat, body.context, body.messages, body.ledger, body.spoken === true)
               res.setHeader('Content-Type', 'text/plain; charset=utf-8')
               try {
                 for await (const text of reply) res.write(text)

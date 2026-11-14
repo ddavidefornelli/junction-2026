@@ -348,6 +348,7 @@ export async function sendChat(
   ledger: Row[] | null,
   messages: ChatMessage[],
   onText: (reply: string) => void,
+  spoken = false,
 ): Promise<string> {
   const res = await fetch('/api/chat', {
     method: 'POST',
@@ -355,6 +356,7 @@ export async function sendChat(
     body: JSON.stringify({
       context,
       ledger,
+      spoken,
       messages: messages.slice(-SENT_MESSAGES).map((m) => (m.role === 'assistant' ? { ...m, content: withoutLookups(m.content) } : m)),
     }),
   })

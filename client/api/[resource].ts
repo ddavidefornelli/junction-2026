@@ -54,9 +54,9 @@ export default async function handler(req: Request, res: Response) {
 
     try {
       const { chatReply } = await import('../chat.js')
-      const { context, messages, ledger } = (req.body ?? {}) as { context?: unknown; messages?: unknown; ledger?: unknown }
+      const { context, messages, ledger, spoken } = (req.body ?? {}) as { context?: unknown; messages?: unknown; ledger?: unknown; spoken?: unknown }
       const config = { apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL }
-      const reply = await chatReply(config, context, messages, ledger)
+      const reply = await chatReply(config, context, messages, ledger, spoken === true)
       res.setHeader('Content-Type', 'text/plain; charset=utf-8')
       try {
         for await (const text of reply) res.write(text)
@@ -104,6 +104,21 @@ export default async function handler(req: Request, res: Response) {
     } catch (error) {
       const { status, message } = failure(error)
       console.error('[api/tts] Request failed', { status, message, error })
+      return res.status(status).json({ error: message })
+    }
+  }
+
+  if (resource === 'stt') {
+    if (req.method !== 'POST') return res.status(405).end()
+
+    try {
+      const { transcribe } = await import('../stt.js')
+      const { audio, mimeType } = (req.body ?? {}) as { audio?: unknown; mimeType?: unknown }
+      const config = { apiKey: process.env.ELEVENLABS_API_KEY }
+      return res.json(await transcribe(config, audio, mimeType))
+    } catch (error) {
+      const { status, message } = failure(error)
+      console.error('[api/stt] Request failed', { status, message, error })
       return res.status(status).json({ error: message })
     }
   }

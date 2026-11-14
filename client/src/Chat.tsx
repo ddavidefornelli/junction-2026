@@ -4,6 +4,7 @@ import { parseReply, sendChat, suggestionsOf, type Chart, type ChatMessage } fro
 import { ChatChart } from './ChatChart'
 import { ChatLookup } from './ChatLookup'
 import { SecureNote } from './Security'
+import { Talk } from './Talk'
 import { speak, speakableText, useVoice } from './voice'
 
 const BUBBLE = 'w-fit max-w-[90%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm'
@@ -64,9 +65,12 @@ export function Chat({
     log.current?.scrollTo({ top: log.current.scrollHeight })
   }, [messages, busy])
 
-  const ask = useCallback(async (text: string) => {
+  // Ask Walter `text`. Resolves with his reply (null when there is none); in a
+  // spoken conversation, once he has finished saying it.
+  const ask = useCallback(async (text: string): Promise<string | null> => {
     const question = text.trim()
-    if (!question || busy || context === null) return
+    if (!question || busy || context === null) return null
+    const talking = voice.mode === 'talk'
     // After a failed reply the question is still the last message: ask it again rather than twice.
     const last = messages[messages.length - 1]
     const asked: ChatMessage[] =
@@ -75,9 +79,9 @@ export function Chat({
     setDraft('')
     setError(false)
     setBusy(true)
+    let reply: string | null = null
     try {
-      const reply = await sendChat(context, ledger, asked, (reply) => onMessages([...asked, { role: 'assistant', content: reply }]))
-      if (voice.enabled) void speak(reply)
+      reply = await sendChat(context, ledger, asked, (reply) => onMessages([...asked, { role: 'assistant', content: reply }]), talking)
     } catch {
       // Nothing, or a reply cut short: back to the question, so it can be asked again.
       onMessages(asked)
@@ -85,7 +89,10 @@ export function Chat({
     } finally {
       setBusy(false)
     }
-  }, [busy, context, ledger, messages, onMessages, voice.enabled])
+    if (reply && talking) await speak(reply)
+    else if (reply && voice.enabled) void speak(reply)
+    return reply
+  }, [busy, context, ledger, messages, onMessages, voice.enabled, voice.mode])
 
   useEffect(() => {
     if (question === null) {
@@ -202,25 +209,32 @@ export function Chat({
           ))}
         </div>
       )}
-      <form onSubmit={submit} className="flex gap-2">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          maxLength={2000}
-          aria-label="Chat message"
-          placeholder={context === null ? 'Loading your data…' : 'Ask a question…'}
-          className="min-w-0 flex-1 rounded-md border border-line bg-white px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-ink"
-        />
-        <button
-          disabled={busy || context === null || !draft.trim()}
-          aria-label="Send message"
-          className="rounded-md bg-ink px-3 text-sm text-white disabled:opacity-50"
-        >
-          Send
-        </button>
-      </form>
+      {voice.mode === 'talk' ? (
+        <Talk ask={ask} disabled={context === null} />
+      ) : (
+        <form onSubmit={submit} className="flex gap-2">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            maxLength={2000}
+            aria-label="Chat message"
+            placeholder={context === null ? 'Loading your data…' : 'Ask a question…'}
+            className="min-w-0 flex-1 rounded-md border border-line bg-white px-3 py-2 text-sm outline-none placeholder:text-muted focus:border-ink"
+          />
+          <button
+            disabled={busy || context === null || !draft.trim()}
+            aria-label="Send message"
+            className="rounded-md bg-ink px-3 text-sm text-white disabled:opacity-50"
+          >
+            Send
+          </button>
+        </form>
+      )}
       <div className="mt-2.5">
-        <SecureNote>Walter sees your figures, never your customer ID or account number. This chat is not saved.</SecureNote>
+        <SecureNote>
+          Walter sees your figures, never your customer ID or account number. This chat is not saved
+          {voice.mode === 'talk' ? '; your voice is turned into text by ElevenLabs and not kept.' : '.'}
+        </SecureNote>
       </div>
     </div>
   )

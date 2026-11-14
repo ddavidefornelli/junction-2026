@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { WalterAvatar } from './WalterAvatar'
-import { setVoiceEnabled, stopSpeaking, useVoice } from './voice'
+import { setMode, setVoiceEnabled, stopSpeaking, useVoice, type Mode } from './voice'
 
 // The chat with Walter, opened over the page: centred, with the page behind it blurred.
 export function ChatDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
@@ -35,7 +35,20 @@ export function ChatDialog({ onClose, children }: { onClose: () => void; childre
               {voice.loading ? 'Getting ready to speak…' : voice.speaking ? 'Speaking…' : 'Your Pankki assistant'}
             </p>
           </div>
-          {voice.speaking && (
+          <div role="radiogroup" aria-label="How to talk with Walter" className="flex rounded-md border border-line p-0.5 text-xs">
+            {(['text', 'talk'] as Mode[]).map((m) => (
+              <button
+                key={m}
+                role="radio"
+                aria-checked={voice.mode === m}
+                onClick={() => setMode(m)}
+                className={`rounded px-2.5 py-1 ${voice.mode === m ? 'bg-ink text-white' : 'text-muted hover:text-ink'}`}
+              >
+                {m === 'text' ? 'Chat' : 'Talk'}
+              </button>
+            ))}
+          </div>
+          {voice.mode === 'text' && voice.speaking && (
             <button
               onClick={stopSpeaking}
               className="rounded-md border border-line px-2 py-1 text-xs text-muted hover:border-ink hover:text-ink"
@@ -43,15 +56,17 @@ export function ChatDialog({ onClose, children }: { onClose: () => void; childre
               Stop
             </button>
           )}
-          <button
-            onClick={() => setVoiceEnabled(!voice.enabled)}
-            aria-pressed={voice.enabled}
-            aria-label={voice.enabled ? 'Turn off Walter’s voice' : 'Turn on Walter’s voice'}
-            title={voice.enabled ? 'Voice on' : 'Voice off'}
-            className={`flex size-8 items-center justify-center rounded-md ${voice.enabled ? 'bg-ink text-white' : 'text-muted hover:text-ink'}`}
-          >
-            <SpeakerIcon on={voice.enabled} />
-          </button>
+          {voice.mode === 'text' && (
+            <button
+              onClick={() => setVoiceEnabled(!voice.enabled)}
+              aria-pressed={voice.enabled}
+              aria-label={voice.enabled ? 'Turn off Walter’s voice' : 'Turn on Walter’s voice'}
+              title={voice.enabled ? 'Voice on' : 'Voice off'}
+              className={`flex size-8 items-center justify-center rounded-md ${voice.enabled ? 'bg-ink text-white' : 'text-muted hover:text-ink'}`}
+            >
+              <SpeakerIcon on={voice.enabled} />
+            </button>
+          )}
           <button
             onClick={() => dialog.current?.close()}
             aria-label="Close chat"

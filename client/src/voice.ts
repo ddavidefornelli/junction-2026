@@ -6,13 +6,18 @@ import { parseReply } from './assistant'
 
 const MAX_CHARS = 2500 // the server's limit (tts.ts)
 const STORAGE_KEY = 'walter-voice'
+const MODE_KEY = 'walter-mode'
 
-type State = { enabled: boolean; speaking: boolean; loading: boolean }
+// How the customer talks with Walter: typing ('text'), or a spoken conversation ('talk').
+export type Mode = 'text' | 'talk'
+type State = { enabled: boolean; speaking: boolean; loading: boolean; mode: Mode }
 
-let state: State = { enabled: readEnabled(), speaking: false, loading: false }
+let state: State = { enabled: readEnabled(), speaking: false, loading: false, mode: readMode() }
 const listeners = new Set<() => void>()
 let audio: HTMLAudioElement | null = null
 let request: AbortController | null = null
+// Ends the promise of the speak() call in progress.
+let finished: (() => void) | null = null
 
 function readEnabled() {
   try {
@@ -20,6 +25,24 @@ function readEnabled() {
   } catch {
     return false // private browsing
   }
+}
+
+function readMode(): Mode {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'talk' ? 'talk' : 'text'
+  } catch {
+    return 'text'
+  }
+}
+
+export function setMode(mode: Mode) {
+  try {
+    localStorage.setItem(MODE_KEY, mode)
+  } catch {
+    // private browsing: the choice lasts for this visit only
+  }
+  stopSpeaking()
+  set({ mode })
 }
 
 function set(next: Partial<State>) {
@@ -66,6 +89,8 @@ export function speakableText(reply: string): string {
 }
 
 export function stopSpeaking() {
+  finished?.()
+  finished = null
   request?.abort()
   request = null
   if (audio) {
@@ -77,6 +102,7 @@ export function stopSpeaking() {
 }
 
 // Walter reads `reply` aloud, cutting off whatever he was saying before.
+// Resolves once he has finished, been stopped, or could not speak.
 export async function speak(reply: string): Promise<void> {
   const text = speakableText(reply)
   stopSpeaking()
@@ -109,7 +135,13 @@ export async function speak(reply: string): Promise<void> {
     player.onended = done
     player.onerror = done
     set({ loading: false, speaking: true })
+    const ended = new Promise<void>((resolve) => {
+      finished = resolve
+      player.addEventListener('ended', () => resolve())
+      player.addEventListener('error', () => resolve())
+    })
     await player.play()
+    await ended
   } catch (e) {
     if (controller.signal.aborted) return
     console.error('[voice] Could not speak', e)

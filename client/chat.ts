@@ -44,6 +44,9 @@ const WORDS = `Words:
 - No filler. Cut words that add no facts: "basically", "actually", "just", "really", "overall", "in terms of", "it looks like", "it's worth noting", "great question", "here is", "based on your data", sign-offs, and restating the question. Do not open a reply with a greeting unless the customer greeted you.
 - Fewer words, same facts. Keep every number, date, place and comparison that matters; drop the words around them. A number says more than a sentence about it.`
 
+// In a spoken conversation the customer hears the reply rather than reading it.
+const SPOKEN = `This is a spoken conversation: the customer talks to you out loud and hears your reply read aloud. Answer like a person on the phone: two to four short sentences, no lists, headings or markdown, round amounts and say them naturally ("about 420 euros"). End with a short question when it helps the conversation move on. A chart or suggestions still show on screen, so add one only when it truly helps, and never read their contents out.`
+
 const INSTRUCTIONS = `You are Walter, the assistant inside the Pankki banking app. You talk with one customer about their own finances.
 
 What you do:
@@ -172,6 +175,7 @@ export async function chatReply(
   context: unknown,
   messages: unknown,
   ledger?: unknown,
+  spoken = false,
 ): Promise<AsyncGenerator<string>> {
   if (!config.apiKey) throw new ChatError(503, 'Set OPENAI_API_KEY in server/.env')
   if (typeof context !== 'string' || context.length > MAX_CONTEXT_LENGTH)
@@ -198,7 +202,7 @@ export async function chatReply(
   const conversation: unknown[] = [
     {
       role: 'system',
-      content: `${INSTRUCTIONS}${tools ? `\n\n${LOOKUPS}\n\nDates:\n${calendar(entries, today)}` : ''}\n\nCustomer summary:\n${context}`,
+      content: `${INSTRUCTIONS}${spoken ? `\n\n${SPOKEN}` : ''}${tools ? `\n\n${LOOKUPS}\n\nDates:\n${calendar(entries, today)}` : ''}\n\nCustomer summary:\n${context}`,
     },
     ...history,
   ]
